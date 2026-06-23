@@ -63,6 +63,9 @@ class AuthService:
         if not verify_password(password, user.password_hash):
             await self._record_failed_attempt(user)
             await self._write_audit(user.id, "LOGIN_FAILURE", ip, user.role.value)
+            # Commit before raising — get_db rolls back the session on any exception,
+            # which would discard the failed_attempts increment.
+            await self.db.commit()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=_GENERIC_AUTH_ERROR,
