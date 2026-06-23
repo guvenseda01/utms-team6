@@ -91,6 +91,13 @@ export async function submitApplication(applicationId: string): Promise<SubmitRe
   return data
 }
 
+export async function resubmitAfterCorrection(applicationId: string): Promise<{ application_id: string; status: string }> {
+  const { data } = await client.post<{ application_id: string; status: string }>(
+    `/applications/${applicationId}/resubmit`,
+  )
+  return data
+}
+
 export async function verifyDocument(
   applicationId: string,
   documentId: string,
