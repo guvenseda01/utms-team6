@@ -113,11 +113,28 @@ class DocumentService:
 
         return self._storage.generate_presigned_get(document.file_path, ttl=300)
 
-    async def backfill_extraction(self, document: Document) -> Document:
-        """Re-run PDF extraction when extracted_data was never stored (legacy uploads)."""
-        if document.extracted_data is not None:
-            return document
+    def _needs_extraction_backfill(self, document: Document) -> bool:
         if document.doc_type not in EXTRACTABLE_DOC_TYPES:
+            return False
+        if document.extracted_data is None:
+            return True
+        if not isinstance(document.extracted_data, dict):
+            return False
+
+        data = document.extracted_data
+        meaningful = [k for k in data if k != "_missing"]
+        if not meaningful:
+            return True
+
+        if document.doc_type == DocType.YKS_RESULT:
+            if document.extracted_data.get("placement_score") is None:
+                return True
+
+        return False
+
+    async def backfill_extraction(self, document: Document) -> Document:
+        """Re-run PDF extraction when extracted_data was never stored or parse failed."""
+        if not self._needs_extraction_backfill(document):
             return document
 
         extracted_data: dict[str, Any] = {}

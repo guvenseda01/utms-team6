@@ -148,8 +148,15 @@ def _extract_yks_say_placement(text: str) -> float | None:
     Extract SAY yerleştirme puanı (Y-SAY / placement score).
 
     ÖSYM belgelerinde SAY satırında genelde ham puan + yerleştirme puanı yan
-    yanadır; bu üniversite yerleştirme sayısal puanını kullanır.
+    yanadır; pypdf bazen araya boşluk koymadan birleştirir (372.880392.144).
     """
+    # pypdf glued table row: "SAY 372.880392.14484,512"
+    glued = _first([
+        r"\bSAY\b\s*(\d{2,3}[.,]\d{2,3})(\d{2,3}[.,]\d{2,3})",
+    ], text)
+    if glued:
+        return round(_to_float(glued.group(2)), 3)
+
     explicit = _first([
         r"Y\s*[-–]\s*SAY[:\s]+([\d.,]+)",
         r"Yerleştirme\s*Say[ıi]sal\s*Puan[ıi]?[:\s]+([\d.,]+)",
