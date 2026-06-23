@@ -13,9 +13,9 @@ const STAGES: Stage[] = [
   { key: 'SUBMITTED', en: 'Submitted', tr: 'Başvuru Alındı' },
   { key: 'UNDER_REVIEW', en: 'Under Review', tr: 'İncelemede' },
   { key: 'ENGLISH_REVIEW', en: 'English Review', tr: 'İngilizce Değerlendirme' },
-  { key: 'DEAN_APPROVED', en: "Dean's Review", tr: 'Dekanlık İncelemesi' },
   { key: 'DEPT_EVAL', en: 'Department Evaluation', tr: 'Bölüm Değerlendirmesi' },
   { key: 'RANKING', en: 'Ranking', tr: 'Sıralama' },
+  { key: 'DEAN_APPROVED', en: "Dean's Review", tr: 'Dekanlık İncelemesi' },
   { key: 'ANNOUNCED', en: 'Announced', tr: 'Sonuçlandı' },
 ]
 
