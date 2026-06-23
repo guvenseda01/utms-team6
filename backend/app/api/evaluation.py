@@ -120,7 +120,7 @@ async def verify_scores(
         "gpa_100": float(record.gpa_100) if record.gpa_100 else None,
         "yks_score": float(record.yks_score) if record.yks_score else None,
         "is_locked": record.is_locked,
-        "application_status": "UNDER_REVIEW",
+        "application_status": "RANKING",
     }
 
 

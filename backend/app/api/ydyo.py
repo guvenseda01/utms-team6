@@ -219,6 +219,12 @@ async def reject_english(
     current_user=Depends(_require_ydyo),
     db: AsyncSession = Depends(get_db),
 ):
+    """Permanently reject the application due to a fundamentally invalid certificate
+    (e.g. fraudulent, unverifiable, or wrong document type).
+    For an insufficient score where the applicant may take the IZTECH exam instead,
+    use POST /route-to-exam. This endpoint moves the application to REJECTED status
+    and notifies the applicant — the decision is irreversible.
+    """
     svc = EnglishProficiencyService(db)
     review = await svc.reject(
         application_id, current_user.id, body.rejection_reason, body.notes

@@ -25,6 +25,7 @@ import {
   createApplication,
   fetchAcademicData,
   submitApplication,
+  resubmitAfterCorrection,
   listDocuments,
   uploadDocument,
   verifyDocument,
@@ -590,6 +591,20 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
     setDocuments(docs)
   }
 
+  async function handleResubmit() {
+    if (!application) return
+    setSubmitting(true)
+    try {
+      await resubmitAfterCorrection(application.id)
+      toast.success('Corrections submitted — Student Affairs will review your updated documents.')
+      await loadApplication(application.id)
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const parsedFromDocuments = useMemo(
     () => academicRecordFromDocuments(documents),
     [documents],
@@ -633,9 +648,18 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
                   {application.status === 'CORRECTION_REQUESTED' && (
                     <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 flex items-start gap-3">
                       <Clock className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                      <div>
+                      <div className="flex-1">
                         <p className="text-sm font-medium text-yellow-800">Correction Required</p>
-                        <p className="text-xs text-yellow-700 mt-0.5">Your documents need corrections. Please upload the updated files in the Documents tab.</p>
+                        <p className="text-xs text-yellow-700 mt-0.5">
+                          Your documents need corrections. Please upload the updated files in the Documents tab, then click "Submit Corrections" to notify Student Affairs.
+                        </p>
+                        <button
+                          onClick={handleResubmit}
+                          disabled={submitting}
+                          className="mt-3 px-4 py-1.5 text-xs font-medium bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50"
+                        >
+                          {submitting ? 'Submitting…' : 'Submit Corrections'}
+                        </button>
                       </div>
                     </div>
                   )}
@@ -1329,7 +1353,7 @@ const REJECTION_CODES: RejectionReasonCode[] = [
 function ApplicationsReviewPanel() {
   const [apps, setApps] = useState<StaffApplicationSummary[]>([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('SUBMITTED')
+  const [statusFilter, setStatusFilter] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<StaffApplicationDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -1432,7 +1456,7 @@ function ApplicationsReviewPanel() {
     }
   }
 
-  const canAct = detail?.status === 'SUBMITTED'
+  const canAct = detail?.status === 'SUBMITTED' || detail?.status === 'UNDER_REVIEW'
 
   return (
     <div className="space-y-6">
@@ -1446,11 +1470,11 @@ function ApplicationsReviewPanel() {
           onChange={e => { setStatusFilter(e.target.value); setSelectedId(null); setDetail(null) }}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
         >
+          <option value="">All</option>
           <option value="SUBMITTED">Submitted</option>
           <option value="UNDER_REVIEW">Under Review</option>
           <option value="CORRECTION_REQUESTED">Correction Requested</option>
           <option value="REJECTED">Rejected</option>
-          <option value="">All</option>
         </select>
       </div>
 

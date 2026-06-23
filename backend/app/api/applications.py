@@ -267,6 +267,55 @@ async def submit_application(
     )
 
 
+@router.post("/{application_id}/resubmit")
+async def resubmit_after_correction(
+    application_id: uuid.UUID,
+    current_user: User = Depends(require_role(UserRole.APPLICANT)),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Applicant confirms they have re-uploaded the requested documents.
+    Moves the application from CORRECTION_REQUESTED back to UNDER_REVIEW
+    so Student Affairs can re-evaluate.
+    """
+    from app.domain.enums import AppStatus
+    from app.repositories.application_repository import ApplicationRepository
+    from app.services.notification_service import NotificationService
+
+    repo = ApplicationRepository(db)
+    app = await repo.get_by_id(application_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if app.applicant_id != current_user.applicant_profile.id:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    if app.status != AppStatus.CORRECTION_REQUESTED:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Resubmit is only allowed when status is CORRECTION_REQUESTED, got {app.status.value}",
+        )
+
+    service = ApplicationService(db)
+    await service.change_status(
+        application_id=application_id,
+        new_status=AppStatus.UNDER_REVIEW,
+        actor_id=current_user.id,
+        note="Applicant resubmitted corrected documents",
+    )
+
+    notif_svc = NotificationService(db)
+    try:
+        await notif_svc.enqueue(
+            user_id=current_user.id,
+            subject="UTMS — Düzeltilmiş Belgeler Gönderildi",
+            application_id=application_id,
+            template="correction_resubmitted",
+            template_vars={"title": "Belgeler Yeniden Gönderildi"},
+        )
+    except Exception:
+        pass
+
+    return {"application_id": str(application_id), "status": AppStatus.UNDER_REVIEW.value}
+
+
 @router.post("/{application_id}/status")
 async def change_status(
     application_id: uuid.UUID,
