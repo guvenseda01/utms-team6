@@ -378,12 +378,21 @@ class IntibakService:
         parse_result = parse_transcript(pdf_bytes)
 
         if not parse_result.courses:
+            text_len = len(parse_result.raw_text or "")
+            detail = (
+                "No course data could be extracted from the transcript. "
+                "Please ensure the PDF contains selectable text (not a scanned image)."
+            )
+            if text_len < 40:
+                detail = (
+                    "The transcript PDF appears empty or unreadable. "
+                    "Please re-upload a text-based PDF (not a scanned image)."
+                )
+            elif parse_result.warnings:
+                detail = f"{detail} ({'; '.join(parse_result.warnings[:2])})"
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    "No course data could be extracted from the transcript. "
-                    "Please ensure the PDF contains selectable text (not a scanned image)."
-                ),
+                detail=detail,
             )
 
         # 5. Serialize to JSONB-compatible dict

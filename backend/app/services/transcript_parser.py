@@ -166,6 +166,13 @@ def _score_courses(courses: list) -> int:
     return total
 
 
+# Row labels to skip when reading stacked (one field per line) PDF text
+_STACKED_SKIP = frozenset({
+    "compulsory", "elective", "optional", "zorunlu", "seçmeli", "secmeli",
+    "type", "grade", "credit", "credits", "course title", "course name",
+    "course code", "code", "grade point", "grade points", "not", "kredi",
+})
+
 # Semester / term heading pattern
 _SEMESTER_RE = re.compile(
     r"((?:19|20)\d{2}[-/](?:19|20)?\d{2,4}[\s\-]*(?:güz|bahar|yaz|fall|spring|summer|guz)?)"
@@ -203,6 +210,7 @@ class TranscriptParser:
         candidates: list[tuple[str, list]] = []
         if tables:
             candidates.append(("table", self._parse_tables(tables)))
+        candidates.append(("stacked_lines", self._parse_stacked_lines(text)))
         candidates.append(("row_pattern", self._parse_row_pattern(prepared)))
         candidates.append(("line_regex", self._parse_lines(prepared)))
         candidates.append(("heuristic", self._parse_heuristic(prepared)))
@@ -328,6 +336,99 @@ class TranscriptParser:
         if col["name"] is None:
             col["name"] = 1 if len(header) > 1 else 0
         return col
+
+    # ------------------------------------------------------------------
+    # Strategy 1b — Stacked lines (pypdf: code / name / credit / grade per line)
+    # ------------------------------------------------------------------
+
+    def _parse_stacked_lines(self, text: str) -> list:
+        """
+        Parse transcripts where each table cell appears on its own line.
+
+        pypdf (and some pdfplumber text extractions) often emit::
+
+            MATH101
+            Calculus I
+            4
+            Compulsory
+            AA
+        """
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        courses: list = []
+        seen: set[str] = set()
+        i = 0
+
+        while i < len(lines):
+            line = lines[i]
+            code_match = _CODE_RE.search(line)
+            if not code_match:
+                i += 1
+                continue
+
+            code = code_match.group(1).replace(" ", "").upper()
+            if not _is_valid_course_code(code):
+                i += 1
+                continue
+
+            # Only handle lines that contain the course code alone
+            if line.upper().replace(" ", "") != code:
+                i += 1
+                continue
+
+            i += 1
+            name_parts: list[str] = []
+            credit: Optional[float] = None
+            grade: Optional[str] = None
+
+            while i < len(lines):
+                current = lines[i]
+
+                next_code = _CODE_RE.search(current)
+                if (
+                    next_code
+                    and _is_valid_course_code(next_code.group(1).replace(" ", "").upper())
+                    and current.upper().replace(" ", "") == next_code.group(1).replace(" ", "").upper()
+                ):
+                    break
+
+                if _SEMESTER_RE.search(current):
+                    i += 1
+                    continue
+
+                if _tr_lower(current) in _STACKED_SKIP:
+                    i += 1
+                    continue
+
+                normalized_grade = self._normalize_grade(current)
+                if normalized_grade and credit is not None:
+                    grade = normalized_grade
+                    i += 1
+                    break
+
+                parsed_credit = self._parse_credit(current)
+                if parsed_credit is not None and credit is None:
+                    credit = parsed_credit
+                    i += 1
+                    continue
+
+                if len(current) > 1 and not _GRADE_RE.match(current.upper()):
+                    name_parts.append(current)
+                i += 1
+
+            course_name = self._clean_course_name(" ".join(name_parts))
+            if not course_name or code in seen:
+                continue
+
+            seen.add(code)
+            courses.append(ParsedCourse(
+                course_code=code,
+                course_name=course_name,
+                credits=credit,
+                grade=grade,
+                semester=None,
+            ))
+
+        return courses
 
     # ------------------------------------------------------------------
     # Strategy 2 — Line-based regex parsing
