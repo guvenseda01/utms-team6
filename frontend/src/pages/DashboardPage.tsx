@@ -55,6 +55,7 @@ import { Sidebar } from '../components/Sidebar'
 import { StatusBadge } from '../components/StatusBadge'
 import Spinner from '../components/Spinner'
 import { ApplicantMessagesPanel, StaffMessagesPanel } from '../components/Messages'
+import { ApplicationStageTracker } from '../components/ApplicationStageTracker'
 import type { ApplicationDetail, ApplicationStatus, AcademicRecord, Document, DocType } from '../types/application'
 import { extractErrorMessage } from '../api/auth'
 
@@ -633,48 +634,12 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
                     </div>
                   </div>
 
-                  {/* Progress — vertical step list (Figma style) */}
-                  <div className="bg-white rounded-lg shadow-sm p-6">
-                    <h2 className="text-lg font-semibold text-gray-900 mb-6">Application Progress</h2>
-                    <div className="space-y-4">
-                      {appStatus ? appStatus.progress.stages.map((stage, i) => (
-                        <div key={i} className="flex items-start gap-4">
-                          <div className="mt-0.5">
-                            {stage.completed ? (
-                              <CheckCircle className="w-5 h-5 text-green-600" />
-                            ) : stage.active ? (
-                              <Clock className="w-5 h-5 text-blue-600" />
-                            ) : (
-                              <div className="w-5 h-5 rounded-full border-2 border-gray-300" />
-                            )}
-                          </div>
-                          <div className="flex-1 flex items-center justify-between">
-                            <div>
-                              <p className="text-sm text-gray-900">{stage.label_en}</p>
-                              <p className="text-xs text-gray-400">{stage.label_tr}</p>
-                            </div>
-                            <StatusBadge status={stage.completed ? 'completed' : stage.active ? 'pending' : 'waiting'} />
-                          </div>
-                        </div>
-                      )) : application.progress.steps.map((step, i) => (
-                        <div key={i} className="flex items-start gap-4">
-                          <div className="mt-0.5">
-                            {step.completed ? (
-                              <CheckCircle className="w-5 h-5 text-green-600" />
-                            ) : step.active ? (
-                              <Clock className="w-5 h-5 text-blue-600" />
-                            ) : (
-                              <div className="w-5 h-5 rounded-full border-2 border-gray-300" />
-                            )}
-                          </div>
-                          <div className="flex-1 flex items-center justify-between">
-                            <p className="text-sm text-gray-900">{step.step.replace(/_/g, ' ')}</p>
-                            <StatusBadge status={step.completed ? 'completed' : step.active ? 'pending' : 'waiting'} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  {/* Progress tracker with visual stage circles */}
+                  <ApplicationStageTracker
+                    currentStatus={application.status}
+                    history={appStatus?.history}
+                    language="en"
+                  />
 
                   {/* Status history */}
                   {appStatus && appStatus.history.length > 0 && (
