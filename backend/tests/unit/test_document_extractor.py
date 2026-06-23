@@ -1,5 +1,21 @@
 """Unit tests for PDF field extraction (YKS glued table rows)."""
-from app.external.document_extractor import _extract_yks, _extract_yks_say_placement
+from app.external.document_extractor import _extract_transcript, _extract_yks, _extract_yks_say_placement
+
+
+SAMPLE_TURKISH_TRANSCRIPT_SUMMARY = """
+ÖRNEK DEVLET ÜNIVERSITESI
+GENEL DURUM ÖZETİ
+Toplam Kazanılan Kredi: 56.0 Genel Akademik Not Ortalaması (GANO):3.56
+Toplam Tamamlanan AKTS: 90.0 Tamamlanan Dönem Sayısı: 3
+"""
+
+
+def test_transcript_extracts_gano_kredi_akts():
+    data = _extract_transcript(SAMPLE_TURKISH_TRANSCRIPT_SUMMARY)
+    assert data.get("gpa") == 3.56
+    assert data.get("completed_credits") == 56
+    assert data.get("total_credits") == 90
+    assert "institution" in data
 
 
 SAMPLE_YKS_TEXT = """

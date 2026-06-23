@@ -47,11 +47,11 @@ def _extract_text(file_bytes: bytes) -> str:
 
 
 def _normalize(text: str) -> str:
-    """Collapse spaces that pypdf sometimes inserts inside digit sequences."""
+    """Collapse spaces that pypdf sometimes inserts inside long digit sequences."""
     prev = None
     while prev != text:
         prev = text
-        text = re.sub(r'(\d) (\d)', r'\1\2', text)
+        text = re.sub(r"(\d{2,}) (\d{2,})", r"\1\2", text)
     return text
 
 
@@ -123,7 +123,9 @@ def _extract_transcript(text: str) -> dict[str, Any]:
 
     # GPA on a 4.0 scale
     gpa_m = _first([
-        # "Cumulative GPA (4.0 scale) 3.50" — optional "(X.X scale)" between label and value
+        # Turkish: Genel Akademik Not Ortalaması (GANO):3.56  (colon may be glued)
+        r"(?:Genel Akademik Not Ortalamas[ıi]|Genel A[gğ][ıi]rl[ıi]kl[ıi] Not Ortalamas[ıi])"
+        r"\s*\(?GANO\)?\s*:?\s*([\d.,]+)",
         r"(?:AGNO|GANO|GPA|G\.P\.A\.|Genel A[gğ]ırlıklı Not|Overall GPA|Cumulative GPA)"
         r"(?:\s*\([^)]*\))?\s*[:\s]+([\d.,]+)",
         # "3.50 / 4.00" or "3.50/4.00"
@@ -134,24 +136,28 @@ def _extract_transcript(text: str) -> dict[str, Any]:
 
     # Completed credits — handle both "Completed Credits" and "Total Credits Completed"
     completed_m = _first([
-        r"(?:Tamamlanan Kredi|Alınan Kredi|Completed Credits?)[:\s]+([\d ]+)",
-        r"(?:Total Credits?\s+Completed|TOTAL COMPLETED CREDITS)[:\s]+([\d ]+)",
+        r"Toplam Kazan[ıi]lan Kredi\s*:?\s*([\d.,]+)",
+        r"(?:Tamamlanan Kredi|Al[ıi]nan Kredi|Completed Credits?)\s*:?\s*([\d.,]+)",
+        r"(?:Total Credits?\s+Completed|TOTAL COMPLETED CREDITS)\s*:?\s*([\d.,]+)",
     ], text)
     if completed_m:
-        result["completed_credits"] = _to_int(completed_m.group(1).strip())
+        val = _to_float(completed_m.group(1).strip())
+        result["completed_credits"] = int(val) if val == int(val) else round(val, 1)
 
-    # Total credits for the degree
+    # Total credits / ECTS for the degree or completed so far
     total_m = _first([
-        r"(?:Total Credits?|Mezuniyet İçin Gereken Kredi|Required Credits?|Total Program Credits?)"
-        r"[:\s]+([\d ]+)",
-        r"(?:Total Credits?\s+Completed|TOTAL COMPLETED CREDITS)[:\s]+([\d ]+)",
+        r"Toplam Tamamlanan AKTS\s*:?\s*([\d.,]+)",
+        r"(?:Total Credits?|Mezuniyet [İi]çin Gereken Kredi|Required Credits?|Total Program Credits?)"
+        r"\s*:?\s*([\d.,]+)",
+        r"(?:Total Credits?\s+Completed|TOTAL COMPLETED CREDITS)\s*:?\s*([\d.,]+)",
     ], text)
     if total_m:
-        result["total_credits"] = _to_int(total_m.group(1).strip())
+        val = _to_float(total_m.group(1).strip())
+        result["total_credits"] = int(val) if val == int(val) else round(val, 1)
 
     # Institution — match a full line that ends with University/Üniversitesi
     inst_m = _first([
-        r"^[ \t]*([^\n\r]+(?:Üniversitesi|University))[ \t]*$",
+        r"^[ \t]*([^\n\r]+(?:Üniversitesi|ÜNIVERSITESI|UNIVERSITESI|University))[ \t]*$",
         r"Institution\s*[:\s]+([^\n\r]+)",
     ], text, flags=re.IGNORECASE | re.MULTILINE)
     if inst_m:

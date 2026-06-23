@@ -111,15 +111,27 @@ _COURSE_ROW_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Turkish transcript row with separate Kredi + AKTS before grade:
+# CENG 101 Introduction to Computer Engineering 3.0 5.0 AA
+_COURSE_ROW_AKTS_RE = re.compile(
+    r"\b([A-ZÇĞİÖŞÜ]{2,6})\s+(\d{3,4}[A-Z]?)\s+"
+    r"(.+?)\s+"
+    r"(\d{1,2}(?:[.,]\d)?)\s+"
+    r"(\d{1,2}(?:[.,]\d)?)\s+"
+    r"(AA|BA|BB|CB|CC|DC|DD|FD|FF|P|EX|W|I|S|U|NA)\b",
+    re.IGNORECASE,
+)
+
 
 def _prepare_text(text: str) -> str:
-    """Normalize PDF text: join broken lines and glued digits."""
+    """Normalize PDF text: join broken lines and glued digit runs."""
     text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
     text = re.sub(r"(?<=[a-z,])\n(?=[a-z])", " ", text)
     prev = None
     while prev != text:
         prev = text
-        text = re.sub(r"(\d) (\d)", r"\1\2", text)
+        # Join broken long integers only (e.g. YKS scores), not separate decimals like "3.0 5.0"
+        text = re.sub(r"(\d{2,}) (\d{2,})", r"\1\2", text)
     return text
 
 
@@ -211,7 +223,9 @@ class TranscriptParser:
         if tables:
             candidates.append(("table", self._parse_tables(tables)))
         candidates.append(("stacked_lines", self._parse_stacked_lines(text)))
-        candidates.append(("row_pattern", self._parse_row_pattern(prepared)))
+        candidates.append(("row_akts", self._parse_row_akts(text)))
+        candidates.append(("row_pattern", self._parse_row_pattern(text)))
+        candidates.append(("row_pattern_prepared", self._parse_row_pattern(prepared)))
         candidates.append(("line_regex", self._parse_lines(prepared)))
         candidates.append(("heuristic", self._parse_heuristic(prepared)))
 
@@ -508,6 +522,29 @@ class TranscriptParser:
                 continue
             credit = self._parse_credit(m.group(3))
             grade = self._normalize_grade(m.group(4))
+            courses.append(ParsedCourse(
+                course_code=code,
+                course_name=name,
+                credits=credit,
+                grade=grade,
+                semester=None,
+            ))
+        return courses
+
+    def _parse_row_akts(self, text: str) -> list:
+        """Parse rows with Kredi + AKTS columns (common in Turkish transcripts)."""
+        courses: list = []
+        seen: set[str] = set()
+        for m in _COURSE_ROW_AKTS_RE.finditer(text):
+            code = f"{m.group(1).replace(' ', '')}{m.group(2)}".upper()
+            if code in seen or not _is_valid_course_code(code):
+                continue
+            seen.add(code)
+            name = self._clean_course_name(m.group(3))
+            if not name:
+                continue
+            credit = self._parse_credit(m.group(4))
+            grade = self._normalize_grade(m.group(6))
             courses.append(ParsedCourse(
                 course_code=code,
                 course_name=name,

@@ -48,3 +48,19 @@ def test_pypdf_fallback_uses_stacked_lines():
     assert result.parser_strategy == "stacked_lines"
     assert len(result.courses) == 2
     assert result.courses[1].course_code == "MATH102"
+
+
+TURKISH_AKTS_LINE = (
+    "CENG 101 Introduction to Computer Engineering 3.0 5.0 AA\n"
+    "MATH 151 Calculus I 4.0 6.0 BA\n"
+)
+
+
+def test_parse_row_akts_spaced_course_codes():
+    parser = TranscriptParser()
+    courses = parser._parse_row_akts(TURKISH_AKTS_LINE)
+    assert len(courses) == 2
+    assert courses[0].course_code == "CENG101"
+    assert courses[0].course_name == "Introduction to Computer Engineering"
+    assert courses[0].credits == 3.0
+    assert courses[0].grade == "AA"
