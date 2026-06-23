@@ -114,7 +114,7 @@ function ApplicationCard({
     setBusy('approve')
     try {
       await approveDeanApplication(app.id)
-      toast.success(`${app.applicant ?? 'Application'} approved — routed to Student Affairs.`)
+      toast.success(`${app.applicant ?? 'Application'} approved — routed to Transfer Commission.`)
       onAfterAction()
     } catch (err) {
       toast.error(extractErrorMessage(err))
