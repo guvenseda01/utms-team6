@@ -17,7 +17,12 @@ export function yksScoreFromDocuments(documents: Document[]): number | null {
   const yks = latestDoc(documents, 'YKS_RESULT')
   if (!yks?.extracted_data) return null
   const data = yks.extracted_data
-  return num(data.score ?? data.yks_score ?? data.puan)
+  return num(
+    data.placement_score
+    ?? data.score
+    ?? data.yks_score
+    ?? data.puan,
+  )
 }
 
 /** Build academic fields from uploaded document extraction already stored on upload. */

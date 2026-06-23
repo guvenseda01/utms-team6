@@ -213,6 +213,8 @@ const EXTRACTION_LABELS: Record<string, string> = {
   total_credits: 'Total Credits',
   institution: 'Institution',
   score: 'Score',
+  placement_score: 'Placement Score (Y-SAY)',
+  raw_score: 'Raw Score',
   score_type: 'Score Type',
   exam_year: 'Exam Year',
   certificate_type: 'Certificate Type',

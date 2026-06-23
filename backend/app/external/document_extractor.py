@@ -134,8 +134,47 @@ def _extract_transcript(text: str) -> dict[str, Any]:
 # YKS Result
 # ---------------------------------------------------------------------------
 
+def _extract_yks_say_placement(text: str) -> float | None:
+    """
+    Extract SAY yerleştirme puanı (Y-SAY / placement score).
+
+    ÖSYM belgelerinde SAY satırında genelde ham puan + yerleştirme puanı yan
+    yanadır; bu üniversite yerleştirme sayısal puanını kullanır.
+    """
+    explicit = _first([
+        r"Y\s*[-–]\s*SAY[:\s]+([\d.,]+)",
+        r"Yerleştirme\s*Say[ıi]sal\s*Puan[ıi]?[:\s]+([\d.,]+)",
+        r"Yerle[sş]tirme\s*SAY\s*Puan[ıi]?[:\s]+([\d.,]+)",
+        r"Yerle[sş]tirme\s*Score[^\n]*SAY[^\n]*([\d.,]+)",
+    ], text)
+    if explicit:
+        return round(_to_float(explicit.group(1)), 3)
+
+    # Table row: SAY | raw score | placement score | rank ...
+    row_m = _first([
+        r"\bSAY\b[^\d\n]*([\d]{2,3}[.,]\d{1,3})[^\d\n]+([\d]{2,3}[.,]\d{1,3})",
+        r"\bSAY\b\s+([\d.,]+)\s+([\d.,]+)",
+    ], text)
+    if row_m:
+        raw = _to_float(row_m.group(1))
+        placement = _to_float(row_m.group(2))
+        # Yerleştirme puanı genelde ham puandan yüksek veya eşit
+        if placement >= raw:
+            return round(placement, 3)
+        return round(max(raw, placement), 3)
+
+    return None
+
+
 def _extract_yks(text: str) -> dict[str, Any]:
     result: dict[str, Any] = {}
+
+    # SAY yerleştirme (Y-SAY) — öncelikli; mevcut ham puan parse'ını silmez
+    placement_score = _extract_yks_say_placement(text)
+    if placement_score is not None:
+        result["score_type"] = "SAY"
+        result["placement_score"] = placement_score
+        result["score"] = placement_score
 
     typed_m = _first([
         r"(SAY|SÖZ|EA|YDT|YDİL|DİL)[:\s]+(?:Puan[ıi]?[:\s]+)?([\d.,]+)",
@@ -143,8 +182,11 @@ def _extract_yks(text: str) -> dict[str, Any]:
     ], text)
     if typed_m:
         score_type = typed_m.group(1).upper().replace("DİL", "YDİL")
+        raw_score = round(_to_float(typed_m.group(2)), 3)
         result["score_type"] = score_type
-        result["score"] = round(_to_float(typed_m.group(2)), 3)
+        result["raw_score"] = raw_score
+        if "score" not in result:
+            result["score"] = raw_score
     else:
         generic_m = _first([
             r"(?:TYT|AYT)\s*(?:Puan[ıi]?)?[:\s]+([\d.,]+)",
@@ -155,7 +197,10 @@ def _extract_yks(text: str) -> dict[str, Any]:
             r"\b([3-5]\d{2}(?:[.,]\d{1,3})?)\s*(?:puan|Puan)",
         ], text)
         if generic_m:
-            result["score"] = round(_to_float(generic_m.group(1)), 3)
+            raw_score = round(_to_float(generic_m.group(1)), 3)
+            result["raw_score"] = raw_score
+            if "score" not in result:
+                result["score"] = raw_score
 
     # Exam year
     year_m = _first([
