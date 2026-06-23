@@ -61,11 +61,19 @@ class AuthService:
         await self._check_lockout(user)
 
         if not verify_password(password, user.password_hash):
-            await self._record_failed_attempt(user)
-            await self._write_audit(user.id, "LOGIN_FAILURE", ip, user.role.value)
-            # Commit before raising — get_db rolls back the session on any exception,
-            # which would discard the failed_attempts increment.
-            await self.db.commit()
+            try:
+                await self._record_failed_attempt(user)
+                await self._write_audit(user.id, "LOGIN_FAILURE", ip, user.role.value)
+                # Commit before raising: get_db rolls back on any exception,
+                # which would discard the failed_attempts increment.
+                await self.db.commit()
+            except Exception:
+                # Best-effort: clean up so the session is usable, but always
+                # return 401 — never let a tracking failure turn into a 500.
+                try:
+                    await self.db.rollback()
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=_GENERIC_AUTH_ERROR,
