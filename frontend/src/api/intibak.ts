@@ -143,8 +143,15 @@ export async function getIntibakTableByApplication(applicationId: string): Promi
   return normalizeIntibakTable(data)
 }
 
-export async function parseTranscript(tableId: string): Promise<{ courses: ParsedCourse[] }> {
-  const { data } = await client.post<{ courses: ParsedCourse[] }>(`/intibak/${tableId}/parse-transcript`)
+export async function parseTranscript(
+  tableId: string,
+  options?: { force?: boolean },
+): Promise<{ courses: ParsedCourse[] }> {
+  const { data } = await client.post<{ courses: ParsedCourse[] }>(
+    `/intibak/${tableId}/parse-transcript`,
+    null,
+    { params: options?.force ? { force: true } : undefined },
+  )
   return data
 }
 

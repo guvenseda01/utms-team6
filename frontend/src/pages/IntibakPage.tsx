@@ -95,6 +95,15 @@ function isUnknownCourseName(name: string): boolean {
   return !n || n === 'unknown course'
 }
 
+function rowNeedsSourceRefresh(row: MappingRowState): boolean {
+  const name = row.sourceCourseName.trim()
+  const code = row.sourceCourseCode.trim().toUpperCase().replace(/\s/g, '')
+  if (isUnknownCourseName(name)) return true
+  if (code && name.toUpperCase().replace(/\s/g, '') === code) return true
+  if (row.sourceCredits <= 0) return true
+  return false
+}
+
 function parsedByCode(courses: ParsedCourse[]): Map<string, ParsedCourse> {
   const map = new Map<string, ParsedCourse>()
   for (const c of courses) {
@@ -121,15 +130,18 @@ function applyParsedToRows(
     const parsed = code ? byCode.get(code) : undefined
     if (!parsed) return row
 
+    const stale = rowNeedsSourceRefresh(row)
     const patch: Partial<MappingRowState> = {}
     if (parsed.course_name && !isUnknownCourseName(parsed.course_name)) {
-      patch.sourceCourseName = parsed.course_name
+      if (stale || isUnknownCourseName(row.sourceCourseName)) {
+        patch.sourceCourseName = parsed.course_name
+      }
     }
     if (parsed.credits != null && parsed.credits > 0) {
-      patch.sourceCredits = parsed.credits
+      if (stale || row.sourceCredits <= 0) patch.sourceCredits = parsed.credits
     }
-    if (parsed.grade) patch.sourceGrade = parsed.grade
-    if (parsed.semester) patch.sourceSemester = parsed.semester
+    if (parsed.grade && (stale || !row.sourceGrade)) patch.sourceGrade = parsed.grade
+    if (parsed.semester && (stale || !row.sourceSemester)) patch.sourceSemester = parsed.semester
 
     if (Object.keys(patch).length === 0) return row
     return { ...row, ...patch, saved: false }
@@ -210,7 +222,7 @@ export default function IntibakPage() {
     const synced = [...nextRows]
     for (let i = 0; i < synced.length; i++) {
       const row = synced[i]
-      if (!row.mappingId || row.saved) continue
+      if (!row.mappingId || (row.saved && !rowNeedsSourceRefresh(row))) continue
       try {
         await updateMapping(activeTableId, row.mappingId, {
           source_course_code: row.sourceCourseCode || undefined,
@@ -230,10 +242,11 @@ export default function IntibakPage() {
     docId: string | null,
     tableStatus: string,
     intoRows: MappingRowState[],
+    force = false,
   ): Promise<MappingRowState[]> {
     if (!docId || tableStatus === 'SUBMITTED') return intoRows
     try {
-      const result = await parseTranscript(activeTableId)
+      const result = await parseTranscript(activeTableId, { force })
       setParsedCourses(result.courses)
       if (result.courses.length === 0) return intoRows
       let merged = applyParsedToRows(intoRows, result.courses)
@@ -256,11 +269,13 @@ export default function IntibakPage() {
 
       if (t.transcript_document_id && t.status !== 'SUBMITTED') {
         setParsing(true)
+        const staleSources = initialRows.some(rowNeedsSourceRefresh)
         initialRows = await loadParsedCourses(
           t.id,
           t.transcript_document_id,
           t.status,
           initialRows,
+          staleSources,
         )
         if (initialRows.length > 0) {
           toast.success(
@@ -291,7 +306,7 @@ export default function IntibakPage() {
     if (!tableId) return
     setParsing(true)
     try {
-      const result = await parseTranscript(tableId)
+      const result = await parseTranscript(tableId, { force: true })
       setParsedCourses(result.courses)
       let merged = applyParsedToRows(rows, result.courses)
       if (table) {

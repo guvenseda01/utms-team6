@@ -306,6 +306,8 @@ class IntibakService:
         table_id: uuid.UUID,
         requester_id: uuid.UUID,
         storage: Optional[MinIOClient] = None,
+        *,
+        force: bool = False,
     ) -> dict:
         """
         Fetch the transcript PDF for the application linked to the given intibak
@@ -351,7 +353,7 @@ class IntibakService:
         # 2. Skip incomplete cached rows (code-only / Unknown Course from old parses)
         cached = transcript_doc.extracted_data or {}
         cached_courses = cached.get("courses") or []
-        if cached_courses and _parsed_courses_usable(cached_courses):
+        if not force and cached_courses and _parsed_courses_usable(cached_courses):
             return {
                 "document_id": str(transcript_doc.id),
                 "parser_strategy": cached.get("parser_strategy", "cached"),

@@ -193,6 +193,7 @@ async def approve_intibak_table(
 @router.post("/intibak/{table_id}/parse-transcript")
 async def parse_transcript(
     table_id: uuid.UUID,
+    force: bool = False,
     current_user=Depends(_require_ygk),
     db: AsyncSession = Depends(get_db),
     storage: MinIOClient = Depends(get_minio_client),
@@ -229,4 +230,5 @@ async def parse_transcript(
         table_id=table_id,
         requester_id=current_user.id,
         storage=storage,
+        force=force,
     )
