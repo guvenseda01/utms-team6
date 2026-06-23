@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   Home, FileText, Send, CheckCircle, Clock, Users,
@@ -56,7 +56,10 @@ import { StatusBadge } from '../components/StatusBadge'
 import Spinner from '../components/Spinner'
 import { ApplicantMessagesPanel, StaffMessagesPanel } from '../components/Messages'
 import { ApplicationStageTracker } from '../components/ApplicationStageTracker'
-import type { ApplicationDetail, ApplicationStatus, AcademicRecord, Document, DocType } from '../types/application'
+import type {
+  ApplicationDetail, ApplicationStatus, ApplicationSummary,
+  AcademicRecord, Document, DocType,
+} from '../types/application'
 import { extractErrorMessage } from '../api/auth'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -455,7 +458,16 @@ function DocumentUploadRow({
 // ---------------------------------------------------------------------------
 
 function ApplicantDashboardContent({ userName, onLogout }: { userName: string; onLogout: () => void }) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'application' | 'messages' | 'results'>('overview')
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  type ApplicantTab = 'overview' | 'applications' | 'application' | 'messages' | 'results'
+  const tabParam = searchParams.get('tab')
+  const validTabs: ApplicantTab[] = ['overview', 'applications', 'application', 'messages', 'results']
+  const initialTab: ApplicantTab = validTabs.includes(tabParam as ApplicantTab)
+    ? (tabParam as ApplicantTab)
+    : 'overview'
+  const [activeTab, setActiveTab] = useState<ApplicantTab>(initialTab)
+  const [applications, setApplications] = useState<ApplicationSummary[]>([])
   const [application, setApplication] = useState<ApplicationDetail | null>(null)
   const [appStatus, setAppStatus] = useState<ApplicationStatus | null>(null)
   const [documents, setDocuments] = useState<Document[]>([])
@@ -469,12 +481,10 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
 
   async function loadApplication(id?: string) {
     try {
-      let appId = id
-      if (!appId) {
-        const apps = await listApplications()
-        if (apps.length === 0) { setHasNoApp(true); setLoadingApp(false); return }
-        appId = apps[0].id
-      }
+      const apps = await listApplications()
+      setApplications(apps)
+      if (apps.length === 0) { setHasNoApp(true); setLoadingApp(false); return }
+      const appId = id ?? apps[0].id
       const [detail, statusData, docs] = await Promise.all([
         getApplication(appId),
         getApplicationStatus(appId),
@@ -492,6 +502,13 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
   }
 
   useEffect(() => { loadApplication() }, [])
+
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab && validTabs.includes(tab as ApplicantTab)) {
+      setActiveTab(tab as ApplicantTab)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     if (activeTab !== 'messages' || !application) return
@@ -566,7 +583,8 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
     <div className="flex flex-1 min-h-screen">
       <Sidebar userName={userName} role="Applicant" onLogout={onLogout}>
         <NavBtn active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} icon={Home} label="Overview" />
-        <NavBtn active={activeTab === 'application'} onClick={() => setActiveTab('application')} icon={FileText} label="My Application" />
+        <NavBtn active={activeTab === 'applications'} onClick={() => setActiveTab('applications')} icon={ClipboardList} label="My Applications" />
+        <NavBtn active={activeTab === 'application'} onClick={() => setActiveTab('application')} icon={FileText} label="Documents" />
         <NavBtn active={activeTab === 'messages'} onClick={() => setActiveTab('messages')} icon={Send} label="Messages" />
         <NavBtn active={activeTab === 'results'} onClick={() => setActiveTab('results')} icon={CheckCircle} label="Results" />
       </Sidebar>
@@ -689,7 +707,68 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
             </div>
           )}
 
-          {/* ── Application tab ───────────────────────────────────────── */}
+          {/* ── My Applications tab ───────────────────────────────────── */}
+          {activeTab === 'applications' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 mb-1">My Applications</h2>
+                <p className="text-gray-500 text-sm">All your current and past transfer applications.</p>
+              </div>
+
+              {hasNoApp || applications.length === 0 ? (
+                <div className="space-y-4">
+                  <div className="bg-white rounded-lg shadow-sm p-6 text-center">
+                    <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 text-sm">No applications yet. Create one below.</p>
+                  </div>
+                  <NewApplicationForm onCreated={(id) => { setLoadingApp(true); loadApplication(id) }} />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {applications.map((app) => (
+                    <div
+                      key={app.id}
+                      className="bg-white rounded-lg shadow-sm border border-gray-100 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-3 mb-2">
+                          <h3 className="font-medium text-gray-900">
+                            Application ID:{' '}
+                            <span className="font-mono">
+                              {app.tracking_number ?? app.id.slice(0, 8).toUpperCase()}
+                            </span>
+                          </h3>
+                          <StatusBadge status={app.status} />
+                        </div>
+                        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500">
+                          <span>
+                            Created: {new Date(app.created_at).toLocaleDateString()}
+                          </span>
+                          <span>
+                            Submitted:{' '}
+                            {app.submitted_at
+                              ? new Date(app.submitted_at).toLocaleDateString()
+                              : 'Not submitted'}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/applications/${app.id}/status`)}
+                        className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shrink-0"
+                      >
+                        <Eye className="w-4 h-4" />
+                        View Status
+                      </button>
+                    </div>
+                  ))}
+                  <NewApplicationForm onCreated={(id) => { setLoadingApp(true); loadApplication(id) }} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Documents tab ─────────────────────────────────────────── */}
           {activeTab === 'application' && (
             <div className="space-y-6">
               {!application ? (

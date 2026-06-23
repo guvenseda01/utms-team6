@@ -8,6 +8,7 @@ import VerifyEmailPage from './pages/VerifyEmailPage'
 import DashboardPage from './pages/DashboardPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
 import IntibakPage from './pages/IntibakPage'
+import ApplicationStatusPage from './pages/ApplicationStatusPage'
 import ProtectedRoute from './components/ProtectedRoute'
 
 export default function App() {
@@ -34,6 +35,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/applications/:applicationId/status"
+            element={
+              <ProtectedRoute>
+                <ApplicationStatusPage />
               </ProtectedRoute>
             }
           />
