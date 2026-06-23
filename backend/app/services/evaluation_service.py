@@ -84,10 +84,10 @@ class EvaluationService:
         app = await self._app_repo.get_by_id(application_id)
         if app is None:
             raise HTTPException(status_code=404, detail="Application not found")
-        if app.status not in (AppStatus.UNDER_REVIEW, AppStatus.RANKING):
+        if app.status != AppStatus.RANKING:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Expected UNDER_REVIEW or RANKING, got {app.status.value}",
+                detail=f"Expected RANKING, got {app.status.value}",
             )
 
         record = app.academic_record
