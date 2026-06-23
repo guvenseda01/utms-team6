@@ -388,8 +388,12 @@ async def list_documents(
     db: AsyncSession = Depends(get_db),
 ) -> List[DocumentSummary]:
     repo = DocumentRepository(db)
+    service = DocumentService(db)
     docs = await repo.get_by_application(application_id)
-    return [DocumentSummary.model_validate(d) for d in docs]
+    refreshed: list = []
+    for doc in docs:
+        refreshed.append(await service.backfill_extraction(doc))
+    return [DocumentSummary.model_validate(d) for d in refreshed]
 
 
 @router.post(
@@ -455,14 +459,9 @@ async def upload_document(
     # Run extraction before persisting so we can store results immediately.
     # For doc types that support extraction, always store a dict (even empty)
     # so the frontend knows extraction was attempted and can prompt the user.
-    _EXTRACTABLE = {
-        DocType.TRANSCRIPT, DocType.YKS_RESULT,
-        DocType.LANGUAGE_CERT, DocType.ID_COPY,
-        DocType.MILITARY_STATUS, DocType.DISCIPLINE_RECORD,
-    }
+    from app.external.document_extractor import EXTRACTABLE_DOC_TYPES, DocumentExtractor
     extracted_data: dict | None = None
-    if doc_type in _EXTRACTABLE:
-        from app.external.document_extractor import DocumentExtractor
+    if doc_type in EXTRACTABLE_DOC_TYPES:
         try:
             extracted_data = await DocumentExtractor().extract(doc_type, content)
         except Exception:

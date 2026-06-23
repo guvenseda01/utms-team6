@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.storage import MinIOClient
 from app.domain.document import Document
 from app.domain.enums import DocStatus, DocType
+from app.external.document_extractor import EXTRACTABLE_DOC_TYPES, DocumentExtractor
 from app.repositories.application_repository import ApplicationRepository
 from app.repositories.document_repository import DocumentRepository
 
@@ -111,3 +112,44 @@ class DocumentService:
                 )
 
         return self._storage.generate_presigned_get(document.file_path, ttl=300)
+
+    def _needs_extraction_backfill(self, document: Document) -> bool:
+        if document.doc_type not in EXTRACTABLE_DOC_TYPES:
+            return False
+        if document.extracted_data is None:
+            return True
+        if not isinstance(document.extracted_data, dict):
+            return False
+
+        data = document.extracted_data
+        meaningful = [k for k in data if k != "_missing"]
+        if not meaningful:
+            return True
+
+        if document.doc_type == DocType.YKS_RESULT:
+            if document.extracted_data.get("placement_score") is None:
+                return True
+
+        return False
+
+    async def backfill_extraction(self, document: Document) -> Document:
+        """Re-run PDF extraction when extracted_data was never stored or parse failed."""
+        if not self._needs_extraction_backfill(document):
+            return document
+
+        extracted_data: dict[str, Any] = {}
+        try:
+            response = self._storage.get_object(document.file_path)
+            try:
+                content = response.read()
+            finally:
+                response.close()
+                response.release_conn()
+            extracted_data = await DocumentExtractor().extract(document.doc_type, content)
+        except Exception:
+            extracted_data = {}
+
+        document.extracted_data = extracted_data
+        await self.db.commit()
+        await self.db.refresh(document)
+        return document

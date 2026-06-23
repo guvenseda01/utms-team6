@@ -12,6 +12,7 @@ from app.schemas.auth import (
     LoginRequest,
     MeResponse,
     RegistrationRequest,
+    ResendVerificationRequest,
     ResetPasswordRequest,
     TokenResponse,
 )
@@ -145,6 +146,16 @@ async def verify_email(
     service = RegistrationService(db)
     await service.verify_email(token)
     return {"message": "Email verified successfully"}
+
+
+@router.post("/resend-verification", status_code=status.HTTP_200_OK)
+async def resend_verification(
+    body: ResendVerificationRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = RegistrationService(db)
+    await service.resend_verification(body.email)
+    return {"message": "If this email is registered and unverified, a verification link has been sent."}
 
 
 # ---------------------------------------------------------------------------

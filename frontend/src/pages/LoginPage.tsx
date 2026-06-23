@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { AxiosError } from 'axios'
 import { GraduationCap, User, Eye, EyeOff } from 'lucide-react'
 import { loginSchema, type LoginFormData } from '../schemas/auth'
-import { login, extractErrorMessage } from '../api/auth'
+import { login, extractErrorMessage, resendVerification } from '../api/auth'
 import { useAuth } from '../context/AuthContext'
 
 export default function LoginPage() {
@@ -14,6 +14,8 @@ export default function LoginPage() {
   const { setAuth } = useAuth()
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
+  const [resending, setResending] = useState(false)
 
   const {
     register,
@@ -37,6 +39,7 @@ export default function LoginPage() {
       if (status === 401) {
         toast.error('Invalid email or password.')
       } else if (status === 403) {
+        setUnverifiedEmail(data.email)
         toast.error('Please verify your email address before logging in.')
       } else if (status === 423) {
         toast.error('Account locked. Too many failed attempts.')
@@ -45,6 +48,19 @@ export default function LoginPage() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleResendVerification() {
+    if (!unverifiedEmail) return
+    setResending(true)
+    try {
+      await resendVerification(unverifiedEmail)
+      toast.success('Verification email sent. Check your inbox.')
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
+    } finally {
+      setResending(false)
     }
   }
 
@@ -114,6 +130,22 @@ export default function LoginPage() {
               {loading ? 'Signing in…' : 'Sign In'}
             </button>
           </form>
+
+          {unverifiedEmail && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-center">
+              <p className="text-xs text-amber-800 mb-2">
+                Your account is not verified yet. Check your email or resend the verification link.
+              </p>
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={resending}
+                className="text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-60"
+              >
+                {resending ? 'Sending…' : 'Resend verification email'}
+              </button>
+            </div>
+          )}
 
           <div className="mt-6 text-center">
             <Link to="/register" className="text-indigo-600 hover:text-indigo-700 text-sm">

@@ -14,15 +14,36 @@ from app.domain.enums import DocType
 logger = logging.getLogger(__name__)
 
 
+def _extract_text_pypdf(file_bytes: bytes) -> str:
+    from pypdf import PdfReader
+    reader = PdfReader(io.BytesIO(file_bytes))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def _extract_text_pdfplumber(file_bytes: bytes) -> str:
+    import pdfplumber
+    parts: list[str] = []
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            parts.append(page.extract_text() or "")
+    return "\n".join(parts)
+
+
 def _extract_text(file_bytes: bytes) -> str:
+    raw = ""
     try:
-        from pypdf import PdfReader
-        reader = PdfReader(io.BytesIO(file_bytes))
-        raw = "\n".join(page.extract_text() or "" for page in reader.pages)
-        return _normalize(raw)
+        raw = _extract_text_pypdf(file_bytes)
     except Exception as exc:
-        logger.warning("PDF text extraction failed: %s", exc)
-        return ""
+        logger.warning("pypdf text extraction failed: %s", exc)
+    if raw.strip():
+        return _normalize(raw)
+    try:
+        raw = _extract_text_pdfplumber(file_bytes)
+        if raw.strip():
+            return _normalize(raw)
+    except Exception as exc:
+        logger.warning("pdfplumber text extraction failed: %s", exc)
+    return ""
 
 
 def _normalize(text: str) -> str:
@@ -33,6 +54,15 @@ def _normalize(text: str) -> str:
         text = re.sub(r'(\d) (\d)', r'\1\2', text)
     return text
 
+
+EXTRACTABLE_DOC_TYPES: frozenset[DocType] = frozenset({
+    DocType.TRANSCRIPT,
+    DocType.YKS_RESULT,
+    DocType.LANGUAGE_CERT,
+    DocType.ID_COPY,
+    DocType.MILITARY_STATUS,
+    DocType.DISCIPLINE_RECORD,
+})
 
 _REQUIRED_FIELDS: dict[DocType, list[str]] = {
     DocType.TRANSCRIPT:    ["gpa", "completed_credits", "total_credits", "institution"],
@@ -134,21 +164,89 @@ def _extract_transcript(text: str) -> dict[str, Any]:
 # YKS Result
 # ---------------------------------------------------------------------------
 
+def _extract_yks_say_placement(text: str) -> float | None:
+    """
+    Extract SAY yerleştirme puanı (Y-SAY / placement score).
+
+    ÖSYM belgelerinde SAY satırında genelde ham puan + yerleştirme puanı yan
+    yanadır; pypdf bazen araya boşluk koymadan birleştirir (372.880392.144).
+    """
+    # pypdf glued table row: "SAY 372.880392.14484,512"
+    glued = _first([
+        r"\bSAY\b\s*(\d{2,3}[.,]\d{2,3})(\d{2,3}[.,]\d{2,3})",
+    ], text)
+    if glued:
+        return round(_to_float(glued.group(2)), 3)
+
+    explicit = _first([
+        r"Y\s*[-–]\s*SAY[:\s]+([\d.,]+)",
+        r"Yerleştirme\s*Say[ıi]sal\s*Puan[ıi]?[:\s]+([\d.,]+)",
+        r"Yerle[sş]tirme\s*SAY\s*Puan[ıi]?[:\s]+([\d.,]+)",
+        r"Yerle[sş]tirme\s*Score[^\n]*SAY[^\n]*([\d.,]+)",
+        r"Placement\s*Score[^\n]{0,120}?\bSAY\b[^\d\n]*[\d.,]+[^\d\n]+([\d.,]+)",
+    ], text)
+    if explicit:
+        return round(_to_float(explicit.group(1)), 3)
+
+    # Table row: SAY | raw score | placement score | rank ...
+    row_m = _first([
+        r"\bSAY\b[^\d\n]*([\d]{2,3}[.,]\d{1,3})[^\d\n]+([\d]{2,3}[.,]\d{1,3})",
+        r"\bSAY\b\s+([\d.,]+)\s+([\d.,]+)",
+    ], text)
+    if row_m:
+        raw = _to_float(row_m.group(1))
+        placement = _to_float(row_m.group(2))
+        # Yerleştirme puanı genelde ham puandan yüksek veya eşit
+        if placement >= raw:
+            return round(placement, 3)
+        return round(max(raw, placement), 3)
+
+    return None
+
+
 def _extract_yks(text: str) -> dict[str, Any]:
     result: dict[str, Any] = {}
 
-    # Score type + score e.g. "SAY Puanı: 380.250"
+    # SAY yerleştirme (Y-SAY) — öncelikli; mevcut ham puan parse'ını silmez
+    placement_score = _extract_yks_say_placement(text)
+    if placement_score is not None:
+        result["score_type"] = "SAY"
+        result["placement_score"] = placement_score
+        result["score"] = placement_score
+
     typed_m = _first([
-        r"(SAY|SÖZ|EA|YDİL)[:\s]+(?:Puan[ıi]?[:\s]+)?([\d.,]+)",
-        r"(SAY|SÖZ|EA|YDİL)\s+Puan[ıi]?\s*[:\-]?\s*([\d.,]+)",
+        r"(SAY|SÖZ|EA|YDT|YDİL|DİL)[:\s]+(?:Puan[ıi]?[:\s]+)?([\d.,]+)",
+        r"(SAY|SÖZ|EA|YDT|YDİL|DİL)\s+Puan[ıi]?\s*[:\-]?\s*([\d.,]+)",
     ], text)
-    if typed_m:
-        result["score_type"] = typed_m.group(1).upper()
-        result["score"] = round(_to_float(typed_m.group(2)), 3)
-    else:
-        score_m = _first([r"(?:Puan[ıi]?|Score)[:\s]+([\d.,]+)"], text)
-        if score_m:
-            result["score"] = round(_to_float(score_m.group(1)), 3)
+    if typed_m and result.get("placement_score") is None:
+        score_type = typed_m.group(1).upper().replace("DİL", "YDİL")
+        try:
+            raw_score = round(_to_float(typed_m.group(2)), 3)
+        except ValueError:
+            raw_score = None
+        if raw_score is not None:
+            result["score_type"] = score_type
+            result["raw_score"] = raw_score
+            if "score" not in result:
+                result["score"] = raw_score
+    elif not typed_m:
+        generic_m = _first([
+            r"(?:TYT|AYT)\s*(?:Puan[ıi]?)?[:\s]+([\d.,]+)",
+            r"(?:Yerleştirme|Yerlestirme)\s*Puan[ıi]?[:\s]+([\d.,]+)",
+            r"(?:YKS|ÖSYM|OSYM)\s*(?:Puan[ıi]?)?[:\s]+([\d.,]+)",
+            r"(?:Puan[ıi]?|Score|YKS\s*Score)[:\s]+([\d.,]+)",
+            r"(?:Toplam|Ham)\s*Puan[ıi]?[:\s]+([\d.,]+)",
+            r"\b([3-5]\d{2}(?:[.,]\d{1,3})?)\s*(?:puan|Puan)",
+        ], text)
+        if generic_m:
+            try:
+                raw_score = round(_to_float(generic_m.group(1)), 3)
+            except ValueError:
+                raw_score = None
+            if raw_score is not None:
+                result["raw_score"] = raw_score
+                if "score" not in result:
+                    result["score"] = raw_score
 
     # Exam year
     year_m = _first([

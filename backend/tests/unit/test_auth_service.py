@@ -102,6 +102,21 @@ async def test_login_wrong_password_increments_failed_attempts(service, db, patc
     assert user.failed_attempts == 1
 
 
+async def test_login_wrong_password_commits_failed_attempt(service, db, patch_redis):
+    """
+    Regression: the failed-attempt counter must be COMMITTED before the 401 is
+    raised. get_db() rolls back the session on any exception, so a bare flush()
+    would be discarded and the account could never reach the lockout threshold.
+    """
+    user = make_user(password_hash=hash_password("correct"), failed_attempts=0)
+    _setup_db_user(db, user)
+
+    with pytest.raises(HTTPException):
+        await service.login(user.email, "wrong", "127.0.0.1")
+
+    db.commit.assert_awaited()
+
+
 # ---------------------------------------------------------------------------
 # T3 — Unknown email returns same generic 401
 # ---------------------------------------------------------------------------

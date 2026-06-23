@@ -73,11 +73,11 @@ function mappingToRow(m: CourseMapping): MappingRowState {
 function parsedToRow(c: ParsedCourse): MappingRowState {
   return {
     mappingId: null,
-    sourceCourseCode: c.course_code,
-    sourceCourseName: c.course_name,
-    sourceCredits: c.credits,
-    sourceGrade: c.grade,
-    sourceSemester: c.semester,
+    sourceCourseCode: c.course_code ?? '',
+    sourceCourseName: c.course_name ?? '',
+    sourceCredits: c.credits ?? 0,
+    sourceGrade: c.grade ?? '',
+    sourceSemester: c.semester ?? '',
     targetCourseName: '',
     targetCourseCode: '',
     targetCredits: '',
@@ -88,6 +88,27 @@ function parsedToRow(c: ParsedCourse): MappingRowState {
     suggestions: [],
     showSuggestions: false,
   }
+}
+
+function mergeParsedCourses(
+  courses: ParsedCourse[],
+  existingRows: MappingRowState[],
+): MappingRowState[] {
+  if (existingRows.length === 0) {
+    return courses.map(parsedToRow)
+  }
+  const existingNames = new Set(existingRows.map(r => r.sourceCourseName.trim().toLowerCase()).filter(Boolean))
+  const existingCodes = new Set(existingRows.map(r => r.sourceCourseCode.trim().toLowerCase()).filter(Boolean))
+  const newRows = courses
+    .filter(c => {
+      const name = c.course_name?.trim().toLowerCase() ?? ''
+      const code = c.course_code?.trim().toLowerCase() ?? ''
+      if (name && existingNames.has(name)) return false
+      if (code && existingCodes.has(code)) return false
+      return true
+    })
+    .map(parsedToRow)
+  return [...existingRows, ...newRows]
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +163,28 @@ export default function IntibakPage() {
       setTableId(t.id)
       setTable(t)
       setTranscriptDocId(t.transcript_document_id ?? null)
-      setRows(t.mappings.map(mappingToRow))
+      let initialRows = t.mappings.map(mappingToRow)
+
+      if (
+        t.transcript_document_id &&
+        t.status !== 'SUBMITTED' &&
+        initialRows.length === 0
+      ) {
+        try {
+          const result = await parseTranscript(t.id)
+          setParsedCourses(result.courses)
+          initialRows = mergeParsedCourses(result.courses, [])
+          if (result.courses.length > 0) {
+            toast.success(
+              `Loaded ${result.courses.length} course${result.courses.length !== 1 ? 's' : ''} from transcript.`,
+            )
+          }
+        } catch (parseErr) {
+          console.warn('Transcript auto-parse failed:', parseErr)
+        }
+      }
+
+      setRows(initialRows)
       const detail = await getEvaluationDetail(t.application_id).catch(() => null)
       if (detail) setAppDetail(detail)
     } catch (err) {
@@ -165,12 +207,7 @@ export default function IntibakPage() {
     try {
       const result = await parseTranscript(tableId)
       setParsedCourses(result.courses)
-      const existingNames = new Set(rows.map(r => r.sourceCourseName))
-      const existingCodes = new Set(rows.map(r => r.sourceCourseCode).filter(Boolean))
-      const newRows = result.courses
-        .filter(c => !existingNames.has(c.course_name) && !existingCodes.has(c.course_code))
-        .map(parsedToRow)
-      if (newRows.length > 0) setRows(prev => [...prev, ...newRows])
+      setRows(prev => mergeParsedCourses(result.courses, prev))
       toast.success(`Parsed ${result.courses.length} course${result.courses.length !== 1 ? 's' : ''} from transcript.`)
     } catch (err) {
       toast.error(extractErrorMessage(err))
@@ -392,15 +429,15 @@ export default function IntibakPage() {
                   className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                 >
                   {parsing ? <Spinner /> : <RefreshCw className="w-4 h-4" />}
-                  {parsing ? 'Parsing…' : 'Auto-Parse (optional)'}
+                  {parsing ? 'Parsing…' : 'Re-parse Transcript'}
                 </button>
               </div>
             </div>
 
             {parsedCourses.length === 0 ? (
               <p className="text-gray-400 text-sm">
-                Open the transcript PDF above to read courses, then add rows manually below —
-                or use "Auto-Parse" to attempt automatic extraction (may be incomplete).
+                Courses from the applicant&apos;s transcript are loaded automatically into the mapping table below.
+                Use &quot;Re-parse Transcript&quot; if the PDF was replaced.
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -455,7 +492,11 @@ export default function IntibakPage() {
               <div className="text-center py-10">
                 <BookOpen className="w-8 h-8 text-gray-200 mx-auto mb-2" />
                 <p className="text-gray-400 text-sm">
-                  No mappings yet. Open the transcript PDF above and click "Add Row" to begin.
+                  {parsing
+                    ? 'Parsing transcript… course rows will appear below automatically.'
+                    : transcriptDocId
+                      ? 'No courses could be parsed from the transcript. Add rows manually or use Re-parse after uploading a text-based PDF.'
+                      : 'No transcript uploaded for this application yet.'}
                 </p>
               </div>
             ) : (

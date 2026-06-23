@@ -63,8 +63,10 @@ class AuthService:
         if not verify_password(password, user.password_hash):
             await self._record_failed_attempt(user)
             await self._write_audit(user.id, "LOGIN_FAILURE", ip, user.role.value)
-            # Commit before raising — get_db rolls back the session on any exception,
-            # which would discard the failed_attempts increment.
+            # Commit the failed-attempt counter / lockout (and audit row) BEFORE
+            # raising: get_db() rolls back the session on any exception, so
+            # without this commit the increment is discarded and the account
+            # can never reach the lockout threshold.
             await self.db.commit()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -73,6 +75,7 @@ class AuthService:
 
         if not user.is_active:
             await self._write_audit(user.id, "LOGIN_BLOCKED_INACTIVE", ip, user.role.value)
+            await self.db.commit()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=_GENERIC_AUTH_ERROR,
@@ -82,6 +85,7 @@ class AuthService:
         # only the email-link flow flips it to True.
         if not user.is_verified:
             await self._write_audit(user.id, "LOGIN_BLOCKED_UNVERIFIED", ip, user.role.value)
+            await self.db.commit()
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Please verify your email address before logging in.",
