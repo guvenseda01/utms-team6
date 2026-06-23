@@ -5,7 +5,7 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -28,6 +28,13 @@ class CourseMappingCreate(BaseModel):
     equivalence_type: str
     notes: Optional[str] = None
 
+    @field_validator("target_course")
+    @classmethod
+    def validate_target_course(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Hedef ders adı zorunludur.")
+        return v
+
 
 class CourseMappingUpdate(BaseModel):
     source_course: Optional[str] = None
@@ -36,6 +43,13 @@ class CourseMappingUpdate(BaseModel):
     target_credits: Optional[float] = None
     equivalence_type: Optional[str] = None
     notes: Optional[str] = None
+
+    @field_validator("target_course")
+    @classmethod
+    def validate_target_course(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("Hedef ders adı zorunludur.")
+        return v
 
 
 def _table_response(table, transcript_document_id: str | None = None):

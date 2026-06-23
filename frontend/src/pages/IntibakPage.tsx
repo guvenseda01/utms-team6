@@ -374,6 +374,13 @@ export default function IntibakPage() {
 
   async function handleSaveRow(index: number) {
     const row = rows[index]
+
+    // Validate target course name
+    if (!row.targetCourseName || !row.targetCourseName.trim()) {
+      toast.error('Hedef ders adı zorunludur.')
+      return
+    }
+
     updateRow(index, { saving: true })
     try {
       if (row.mappingId) {
@@ -700,9 +707,15 @@ export default function IntibakPage() {
                                 updateRow(index, { targetCourseName: e.target.value, saved: false })
                               }
                               disabled={isSubmitted}
+                              required
                               placeholder="Target course name…"
                               className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-400"
                             />
+                            {!row.targetCourseName.trim() && (
+                              <span style={{ color: '#dc2626', fontSize: '11px' }}>
+                                Hedef ders adı boş bırakılamaz.
+                              </span>
+                            )}
                             <div className="flex items-center gap-1.5">
                               <input
                                 type="text"
