@@ -34,6 +34,15 @@ def _normalize(text: str) -> str:
     return text
 
 
+EXTRACTABLE_DOC_TYPES: frozenset[DocType] = frozenset({
+    DocType.TRANSCRIPT,
+    DocType.YKS_RESULT,
+    DocType.LANGUAGE_CERT,
+    DocType.ID_COPY,
+    DocType.MILITARY_STATUS,
+    DocType.DISCIPLINE_RECORD,
+})
+
 _REQUIRED_FIELDS: dict[DocType, list[str]] = {
     DocType.TRANSCRIPT:    ["gpa", "completed_credits", "total_credits", "institution"],
     DocType.YKS_RESULT:   ["score", "score_type", "exam_year"],
