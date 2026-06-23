@@ -52,6 +52,18 @@ export function ApplicationStageTracker({
   const statusToUse = isRejected && rejectedFromStatus ? rejectedFromStatus : displayStatus
   const currentIndex = STAGES.findIndex(s => s.key === statusToUse)
 
+  // DEBUG: Log status values to help identify mismatches
+  console.log('[ApplicationStageTracker]', {
+    rawStatus: currentStatus,
+    displayStatus,
+    statusToUse,
+    currentIndex,
+    foundStage: currentIndex !== -1 ? STAGES[currentIndex] : 'NOT FOUND',
+    allStages: STAGES.map(s => s.key),
+    isCorrectionRequested,
+    isRejected,
+  })
+
   function getState(index: number): StageState {
     if (currentIndex === -1) return 'pending'
 

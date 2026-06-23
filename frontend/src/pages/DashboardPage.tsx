@@ -501,6 +501,12 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
         getApplicationStatus(appId),
         listDocuments(appId),
       ])
+      console.log('[DashboardPage] Loaded application:', {
+        id: detail.id,
+        status: detail.status,
+        trackingNumber: detail.tracking_number,
+        submittedAt: detail.submitted_at,
+      })
       setApplication(detail)
       setAppStatus(statusData)
       setHasNoApp(false)
@@ -572,6 +578,10 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
     setSubmitting(true)
     try {
       const result = await submitApplication(application.id)
+      console.log('[DashboardPage] Submit response:', {
+        trackingNumber: result.tracking_number,
+        status: result.status,
+      })
       toast.success(`Submitted! Tracking number: ${result.tracking_number}`)
       await loadApplication(application.id)
     } catch (err) {
