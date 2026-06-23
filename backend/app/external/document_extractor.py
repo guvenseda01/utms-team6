@@ -146,6 +146,7 @@ def _extract_yks_say_placement(text: str) -> float | None:
         r"Yerleştirme\s*Say[ıi]sal\s*Puan[ıi]?[:\s]+([\d.,]+)",
         r"Yerle[sş]tirme\s*SAY\s*Puan[ıi]?[:\s]+([\d.,]+)",
         r"Yerle[sş]tirme\s*Score[^\n]*SAY[^\n]*([\d.,]+)",
+        r"Placement\s*Score[^\n]{0,120}?\bSAY\b[^\d\n]*[\d.,]+[^\d\n]+([\d.,]+)",
     ], text)
     if explicit:
         return round(_to_float(explicit.group(1)), 3)

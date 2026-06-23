@@ -6,17 +6,37 @@ function num(value: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function latestDoc(documents: Document[], docType: Document['doc_type']): Document | undefined {
+function latestUploadedDoc(
+  documents: Document[],
+  docType: Document['doc_type'],
+): Document | undefined {
   return documents
-    .filter(d => d.doc_type === docType && d.extracted_data && Object.keys(d.extracted_data).length > 0)
+    .filter(d => d.doc_type === docType)
     .sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime())[0]
+}
+
+function latestParsedDoc(
+  documents: Document[],
+  docType: Document['doc_type'],
+): Document | undefined {
+  return documents
+    .filter(d => {
+      if (d.doc_type !== docType || !d.extracted_data) return false
+      return Object.keys(d.extracted_data).some(k => k !== '_missing')
+    })
+    .sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime())[0]
+}
+
+export function hasYksDocument(documents: Document[]): boolean {
+  return documents.some(d => d.doc_type === 'YKS_RESULT')
 }
 
 /** YKS score strictly from YKS_RESULT document extraction. */
 export function yksScoreFromDocuments(documents: Document[]): number | null {
-  const yks = latestDoc(documents, 'YKS_RESULT')
-  if (!yks?.extracted_data) return null
-  const data = yks.extracted_data
+  const yks = latestUploadedDoc(documents, 'YKS_RESULT')
+  if (!yks?.extracted_data || typeof yks.extracted_data !== 'object') return null
+  const data = yks.extracted_data as Record<string, unknown>
+  if (Object.keys(data).every(k => k === '_missing')) return null
   return num(
     data.placement_score
     ?? data.score
@@ -27,7 +47,7 @@ export function yksScoreFromDocuments(documents: Document[]): number | null {
 
 /** Build academic fields from uploaded document extraction already stored on upload. */
 export function academicRecordFromDocuments(documents: Document[]): AcademicRecord | null {
-  const transcript = latestDoc(documents, 'TRANSCRIPT')
+  const transcript = latestParsedDoc(documents, 'TRANSCRIPT')
   const yksScore = yksScoreFromDocuments(documents)
 
   if (!transcript && yksScore == null) return null
@@ -76,6 +96,7 @@ export function mergeAcademicRecord(
   documents: Document[] = [],
 ): AcademicRecord | null {
   const yksFromPdf = yksScoreFromDocuments(documents)
+  const yksUploaded = hasYksDocument(documents)
 
   if (!fromApi && !fromDocs) return null
 
@@ -91,17 +112,22 @@ export function mergeAcademicRecord(
     errors: null,
   }
 
+  // YKS PDF yüklüyse mock API puanını (450) asla gösterme — sadece parse sonucu
+  const yksScore = yksUploaded
+    ? yksFromPdf
+    : (yksFromPdf ?? docFields.yks_score ?? fromApi?.yks_score ?? null)
+
   const merged: AcademicRecord = {
     ...base,
     gpa_4: docFields.gpa_4 ?? fromApi?.gpa_4 ?? null,
     institution: docFields.institution ?? fromApi?.institution ?? null,
     credits_completed: docFields.credits_completed ?? fromApi?.credits_completed ?? null,
-    yks_score: yksFromPdf ?? docFields.yks_score ?? fromApi?.yks_score ?? null,
+    yks_score: yksScore,
     source: docFields.source ?? fromApi?.source ?? null,
   }
 
   const sourceParts: string[] = []
-  if (merged.gpa_4 != null && latestDoc(documents, 'TRANSCRIPT')) sourceParts.push('TRANSCRIPT')
+  if (merged.gpa_4 != null && latestParsedDoc(documents, 'TRANSCRIPT')) sourceParts.push('TRANSCRIPT')
   if (merged.yks_score != null && yksFromPdf != null) sourceParts.push('YKS')
   if (sourceParts.length > 0) {
     merged.source = `${sourceParts.join('+')} (parsed from documents)`
