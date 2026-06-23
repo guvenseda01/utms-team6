@@ -553,9 +553,11 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
       setDocuments(docs)
       setAcademicRecord(mergeAcademicRecord(record, academicRecordFromDocuments(docs), docs))
       if (record.errors?.length) {
-        toast.error(`Partial data: ${record.errors.join(', ')}`)
+        toast.error(record.errors.join(' '))
+      } else if (record.source) {
+        toast.success('Academic data refreshed from uploaded documents.')
       } else {
-        toast.success('Academic data fetched successfully.')
+        toast('Upload transcript and YKS PDFs to populate academic data.', { icon: 'ℹ️' })
       }
       await loadApplication(application.id)
     } catch (err) {
@@ -835,7 +837,7 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
                       <div>
                         <h2 className="text-lg font-semibold text-gray-900">Academic Data</h2>
                         <p className="text-gray-500 text-xs mt-0.5">
-                          From uploaded documents when available; otherwise UBYS, YÖKSİS, and ÖSYM
+                          Parsed from uploaded transcript and YKS documents only
                         </p>
                       </div>
                       <button
@@ -857,7 +859,7 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
                       </div>
                     ) : (
                       <p className="text-gray-400 text-sm">
-                        Upload transcript and YKS documents to see parsed data, or click &quot;Fetch Academic Data&quot;.
+                        Upload transcript and YKS PDFs — data is parsed from those documents only.
                       </p>
                     )}
                   </div>

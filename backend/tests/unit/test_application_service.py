@@ -18,10 +18,8 @@ from app.domain.eligibility import EligibilityCheck
 from app.domain.enums import AppStatus, DocType
 from app.domain.period import ApplicationPeriod
 from app.domain.program import Program
-from app.external.ubys_adapter import ExternalServiceTimeoutError, TranscriptData, UBYSAdapter
-from app.external.yoksis_adapter import YOKSISAdapter, YOKSISRecord
-from app.external.osym_adapter import OSYMAdapter, YKSScore
 from app.services.application_service import ApplicationService
+from app.services.document_service import DocumentService
 
 
 # ---------------------------------------------------------------------------
@@ -178,71 +176,70 @@ async def test_create_application_closed_period_returns_403():
 
 
 # ---------------------------------------------------------------------------
-# T4 — Fetch academic data — all APIs respond → AcademicRecord saved
+# T4 — Fetch academic data from parsed documents only
 # ---------------------------------------------------------------------------
 
-async def test_fetch_academic_data_all_apis_respond():
+async def test_fetch_academic_data_from_parsed_documents():
     db = AsyncMock()
     db.flush = AsyncMock()
     db.add = MagicMock()
     application = _make_application()
     service = _make_service(db, application=application)
 
-    ubys = AsyncMock(spec=UBYSAdapter)
-    ubys.fetch_transcript = AsyncMock(
-        return_value=TranscriptData(gpa_4=3.5, credits=120, institution="IZTECH")
-    )
-    yoksis = AsyncMock(spec=YOKSISAdapter)
-    yoksis.fetch_academic_record = AsyncMock(
-        return_value=YOKSISRecord(gpa_4=3.5, institution="IZTECH", credits=120)
-    )
-    osym = AsyncMock(spec=OSYMAdapter)
-    osym.fetch_yks_score = AsyncMock(
-        return_value=YKSScore(score=450.0, exam_year=2024, score_type="SAY")
-    )
-    service._ubys = ubys
-    service._yoksis = yoksis
-    service._osym = osym
+    now = datetime.now(timezone.utc)
+    transcript = MagicMock()
+    transcript.doc_type = DocType.TRANSCRIPT
+    transcript.uploaded_at = now
+    transcript.extracted_data = {
+        "gpa": 3.55,
+        "institution": "EXAMPLE UNIVERSITY",
+        "completed_credits": 34,
+    }
+    yks = MagicMock()
+    yks.doc_type = DocType.YKS_RESULT
+    yks.uploaded_at = now
+    yks.extracted_data = {"placement_score": 392.144, "score": 392.144}
 
-    result = await service.fetch_academic_data(application.id)
+    service._doc_repo = AsyncMock()
+    service._doc_repo.get_by_application = AsyncMock(return_value=[transcript, yks])
 
-    assert result["gpa_4"] == 3.5
-    assert result["yks_score"] == 450.0
+    async def _passthrough(doc):
+        return doc
+
+    with patch.object(DocumentService, "backfill_extraction", side_effect=_passthrough):
+        result = await service.fetch_academic_data(application.id)
+
+    assert result["gpa_4"] == 3.55
+    assert result["yks_score"] == 392.144
+    assert "TRANSCRIPT" in (result["source"] or "")
+    assert "YKS" in (result["source"] or "")
     assert result["errors"] is None
 
 
 # ---------------------------------------------------------------------------
-# T5 — Fetch academic data — one API times out → partial record, error logged
+# T5 — Fetch with no uploaded/parsed documents → empty + message
 # ---------------------------------------------------------------------------
 
-async def test_fetch_academic_data_one_timeout_partial_record():
+async def test_fetch_academic_data_no_documents_returns_message():
     db = AsyncMock()
     db.flush = AsyncMock()
     db.add = MagicMock()
     application = _make_application()
     service = _make_service(db, application=application)
 
-    ubys = AsyncMock(spec=UBYSAdapter)
-    ubys.fetch_transcript = AsyncMock(
-        side_effect=ExternalServiceTimeoutError("UBYS timeout")
-    )
-    yoksis = AsyncMock(spec=YOKSISAdapter)
-    yoksis.fetch_academic_record = AsyncMock(
-        return_value=YOKSISRecord(gpa_4=3.2, institution="IZTECH", credits=90)
-    )
-    osym = AsyncMock(spec=OSYMAdapter)
-    osym.fetch_yks_score = AsyncMock(
-        return_value=YKSScore(score=420.0, exam_year=2024, score_type="SAY")
-    )
-    service._ubys = ubys
-    service._yoksis = yoksis
-    service._osym = osym
+    service._doc_repo = AsyncMock()
+    service._doc_repo.get_by_application = AsyncMock(return_value=[])
 
-    result = await service.fetch_academic_data(application.id)
+    async def _passthrough(doc):
+        return doc
 
+    with patch.object(DocumentService, "backfill_extraction", side_effect=_passthrough):
+        result = await service.fetch_academic_data(application.id)
+
+    assert result["gpa_4"] is None
+    assert result["yks_score"] is None
     assert result["errors"] is not None
-    assert any("UBYS" in e for e in result["errors"])
-    assert result["gpa_4"] == 3.2
+    assert any("uploaded documents" in e.lower() for e in result["errors"])
 
 
 # ---------------------------------------------------------------------------

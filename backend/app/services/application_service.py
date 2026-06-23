@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -11,13 +10,13 @@ from app.domain.application import Application
 from app.domain.audit import AuditLog
 from app.domain.eligibility import EligibilityCheck
 from app.domain.enums import AppStatus, DocType
-from app.external.osym_adapter import OSYMAdapter
-from app.external.ubys_adapter import ExternalServiceTimeoutError, UBYSAdapter
-from app.external.yoksis_adapter import YOKSISAdapter
 from app.repositories.application_repository import ApplicationRepository
+from app.repositories.document_repository import DocumentRepository
 from app.repositories.eligibility_repository import EligibilityRepository
 from app.repositories.period_repository import PeriodRepository
 from app.repositories.program_repository import ProgramRepository
+from app.services.academic_from_documents import academic_record_from_documents
+from app.services.document_service import DocumentService
 from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
@@ -58,18 +57,13 @@ class ApplicationService:
     def __init__(
         self,
         db: AsyncSession,
-        ubys: Optional[UBYSAdapter] = None,
-        yoksis: Optional[YOKSISAdapter] = None,
-        osym: Optional[OSYMAdapter] = None,
     ) -> None:
         self.db = db
         self._app_repo = ApplicationRepository(db)
         self._period_repo = PeriodRepository(db)
         self._program_repo = ProgramRepository(db)
         self._elig_repo = EligibilityRepository(db)
-        self._ubys = ubys or UBYSAdapter()
-        self._yoksis = yoksis or YOKSISAdapter()
-        self._osym = osym or OSYMAdapter()
+        self._doc_repo = DocumentRepository(db)
 
     async def create_application(
         self,
@@ -110,44 +104,19 @@ class ApplicationService:
         return application
 
     async def fetch_academic_data(self, application_id: uuid.UUID) -> dict:
+        """Refresh academic record from uploaded PDF extraction only (no mock UBYS/ÖSYM)."""
         application = await self._app_repo.get_by_id(application_id)
         if application is None:
             raise HTTPException(status_code=404, detail="Application not found")
 
-        national_id = application.applicant.national_id
-        errors: list[str] = []
+        doc_service = DocumentService(self.db)
+        docs = await self._doc_repo.get_by_application(application_id)
+        refreshed = [await doc_service.backfill_extraction(d) for d in docs]
 
-        async def _fetch_ubys():
-            try:
-                return await self._ubys.fetch_transcript(national_id)
-            except ExternalServiceTimeoutError as exc:
-                logger.warning("UBYS timeout: %s", exc)
-                errors.append("UBYS: timeout")
-                return None
-
-        async def _fetch_yoksis():
-            try:
-                return await self._yoksis.fetch_academic_record(national_id)
-            except ExternalServiceTimeoutError as exc:
-                logger.warning("YÖKSİS timeout: %s", exc)
-                errors.append("YÖKSİS: timeout")
-                return None
-
-        async def _fetch_osym():
-            try:
-                return await self._osym.fetch_yks_score(national_id)
-            except ExternalServiceTimeoutError as exc:
-                logger.warning("ÖSYM timeout: %s", exc)
-                errors.append("ÖSYM: timeout")
-                return None
-
-        ubys_data, yoksis_data, osym_data = await asyncio.gather(
-            _fetch_ubys(), _fetch_yoksis(), _fetch_osym()
-        )
+        parsed = academic_record_from_documents(refreshed)
+        now = datetime.now(timezone.utc)
 
         from app.domain.academic_record import AcademicRecord
-
-        now = datetime.now(timezone.utc)
 
         if application.academic_record is None:
             record = AcademicRecord(application_id=application.id)
@@ -155,21 +124,32 @@ class ApplicationService:
         else:
             record = application.academic_record
 
-        if ubys_data is not None:
-            record.gpa_4 = ubys_data.gpa_4
-            record.credits_completed = ubys_data.credits
-            record.institution = ubys_data.institution
-            record.source = "UBYS"
-        elif yoksis_data is not None:
-            record.gpa_4 = yoksis_data.gpa_4
-            record.credits_completed = yoksis_data.credits
-            record.institution = yoksis_data.institution
-            record.source = "YOKSIS"
+        if parsed is None:
+            record.institution = None
+            record.gpa_4 = None
+            record.gpa_100 = None
+            record.yks_score = None
+            record.credits_completed = None
+            record.source = None
+            record.fetched_at = now
+            await self.db.flush()
+            return {
+                "institution": None,
+                "gpa_4": None,
+                "gpa_100": None,
+                "yks_score": None,
+                "credits_completed": None,
+                "fetched_at": record.fetched_at.isoformat(),
+                "source": None,
+                "errors": ["No parsed data from uploaded documents. Upload transcript and YKS PDFs first."],
+            }
 
-        if osym_data is not None:
-            record.yks_score = osym_data.score
-            record.source = (record.source or "") + "+OSYM"
-
+        record.institution = parsed.get("institution")
+        record.gpa_4 = parsed.get("gpa_4")
+        record.gpa_100 = parsed.get("gpa_100")
+        record.yks_score = parsed.get("yks_score")
+        record.credits_completed = parsed.get("credits_completed")
+        record.source = parsed.get("source")
         record.fetched_at = now
         await self.db.flush()
 
@@ -181,7 +161,7 @@ class ApplicationService:
             "credits_completed": record.credits_completed,
             "fetched_at": record.fetched_at.isoformat(),
             "source": record.source,
-            "errors": errors if errors else None,
+            "errors": None,
         }
 
     async def run_eligibility_checks(
