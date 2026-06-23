@@ -50,6 +50,9 @@ USER appuser
 
 EXPOSE 8000
 
-# Migrations run via fly.toml [deploy] release_command before this starts.
-# Override 'command' in docker-compose for other roles (e.g. Celery worker).
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Apply pending DB migrations, then start the server. This runs on platforms
+# that launch the image's CMD directly (e.g. Railway). `alembic upgrade head`
+# is idempotent — a no-op when the DB is already up to date. docker-compose
+# overrides `command` per service, so this does not run for the Celery worker
+# there. Only DATABASE_URL is required (see app/migrations/env.py).
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
