@@ -22,3 +22,13 @@ def test_yks_extract_includes_placement_score_and_exam_year():
     assert data.get("score") == 392.144
     assert data.get("score_type") == "SAY"
     assert data.get("exam_year") == 2026
+
+
+# Real PDF text shape: pypdf glues digits — typed_m must not crash extract()
+GLUED_SAY_ROW = "SAY 372.880392.14484,512 Calculated\nExam Year 2026"
+
+
+def test_yks_extract_glued_say_row_does_not_crash():
+    data = _extract_yks(GLUED_SAY_ROW)
+    assert data.get("placement_score") == 392.144
+    assert data.get("score") == 392.144

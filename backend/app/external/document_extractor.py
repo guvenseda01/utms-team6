@@ -218,14 +218,18 @@ def _extract_yks(text: str) -> dict[str, Any]:
         r"(SAY|SÖZ|EA|YDT|YDİL|DİL)[:\s]+(?:Puan[ıi]?[:\s]+)?([\d.,]+)",
         r"(SAY|SÖZ|EA|YDT|YDİL|DİL)\s+Puan[ıi]?\s*[:\-]?\s*([\d.,]+)",
     ], text)
-    if typed_m:
+    if typed_m and result.get("placement_score") is None:
         score_type = typed_m.group(1).upper().replace("DİL", "YDİL")
-        raw_score = round(_to_float(typed_m.group(2)), 3)
-        result["score_type"] = score_type
-        result["raw_score"] = raw_score
-        if "score" not in result:
-            result["score"] = raw_score
-    else:
+        try:
+            raw_score = round(_to_float(typed_m.group(2)), 3)
+        except ValueError:
+            raw_score = None
+        if raw_score is not None:
+            result["score_type"] = score_type
+            result["raw_score"] = raw_score
+            if "score" not in result:
+                result["score"] = raw_score
+    elif not typed_m:
         generic_m = _first([
             r"(?:TYT|AYT)\s*(?:Puan[ıi]?)?[:\s]+([\d.,]+)",
             r"(?:Yerleştirme|Yerlestirme)\s*Puan[ıi]?[:\s]+([\d.,]+)",
@@ -235,10 +239,14 @@ def _extract_yks(text: str) -> dict[str, Any]:
             r"\b([3-5]\d{2}(?:[.,]\d{1,3})?)\s*(?:puan|Puan)",
         ], text)
         if generic_m:
-            raw_score = round(_to_float(generic_m.group(1)), 3)
-            result["raw_score"] = raw_score
-            if "score" not in result:
-                result["score"] = raw_score
+            try:
+                raw_score = round(_to_float(generic_m.group(1)), 3)
+            except ValueError:
+                raw_score = None
+            if raw_score is not None:
+                result["raw_score"] = raw_score
+                if "score" not in result:
+                    result["score"] = raw_score
 
     # Exam year
     year_m = _first([
