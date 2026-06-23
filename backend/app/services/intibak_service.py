@@ -22,6 +22,17 @@ from app.domain.intibak import CourseMapping, IntibakTable
 from app.repositories.application_repository import ApplicationRepository
 
 
+def _parsed_courses_usable(courses: list) -> bool:
+    """Cached transcript courses must have real names — not placeholder rows."""
+    if not courses:
+        return False
+    for item in courses:
+        name = str(item.get("course_name") or "").strip()
+        if not name or name.lower() == "unknown course":
+            return False
+    return True
+
+
 class IntibakService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -331,14 +342,15 @@ class IntibakService:
                 detail="No accepted transcript document found for this application.",
             )
 
-        # 2. Return cached transcript-parser result when courses are already stored
+        # 2. Use cached courses only when complete (skip stale "Unknown Course" entries)
         cached = transcript_doc.extracted_data or {}
-        if cached.get("courses"):
+        cached_courses = cached.get("courses") or []
+        if cached_courses and _parsed_courses_usable(cached_courses):
             return {
                 "document_id": str(transcript_doc.id),
                 "parser_strategy": cached.get("parser_strategy", "cached"),
                 "warnings": cached.get("warnings", []),
-                "courses": cached.get("courses", []),
+                "courses": cached_courses,
             }
 
         # 3. Download PDF binary from MinIO

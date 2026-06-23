@@ -90,25 +90,74 @@ function parsedToRow(c: ParsedCourse): MappingRowState {
   }
 }
 
-function mergeParsedCourses(
-  courses: ParsedCourse[],
-  existingRows: MappingRowState[],
-): MappingRowState[] {
-  if (existingRows.length === 0) {
-    return courses.map(parsedToRow)
+function isUnknownCourseName(name: string): boolean {
+  const n = name.trim().toLowerCase()
+  return !n || n === 'unknown course'
+}
+
+function parsedByCode(courses: ParsedCourse[]): Map<string, ParsedCourse> {
+  const map = new Map<string, ParsedCourse>()
+  for (const c of courses) {
+    const code = c.course_code?.trim().toUpperCase()
+    if (code) map.set(code, c)
   }
-  const existingNames = new Set(existingRows.map(r => r.sourceCourseName.trim().toLowerCase()).filter(Boolean))
-  const existingCodes = new Set(existingRows.map(r => r.sourceCourseCode.trim().toLowerCase()).filter(Boolean))
-  const newRows = courses
+  return map
+}
+
+/** Merge transcript parse into existing mapping rows (by course code). */
+function applyParsedToRows(
+  rows: MappingRowState[],
+  courses: ParsedCourse[],
+): MappingRowState[] {
+  const usable = courses.filter(c => !isUnknownCourseName(c.course_name ?? ''))
+  if (rows.length === 0) {
+    return usable.map(parsedToRow)
+  }
+
+  const byCode = parsedByCode(usable)
+
+  const updated = rows.map(row => {
+    const code = row.sourceCourseCode.trim().toUpperCase()
+    const parsed = code ? byCode.get(code) : undefined
+    if (!parsed) return row
+
+    const patch: Partial<MappingRowState> = {}
+    if (parsed.course_name && !isUnknownCourseName(parsed.course_name)) {
+      if (isUnknownCourseName(row.sourceCourseName)) {
+        patch.sourceCourseName = parsed.course_name
+      }
+    }
+    if (parsed.credits != null && parsed.credits > 0) {
+      if (!row.sourceCredits || row.sourceCredits === 0) {
+        patch.sourceCredits = parsed.credits
+      }
+    }
+    if (parsed.grade) patch.sourceGrade = parsed.grade
+    if (parsed.semester) patch.sourceSemester = parsed.semester
+
+    if (Object.keys(patch).length === 0) return row
+    return { ...row, ...patch, saved: false }
+  })
+
+  const existingCodes = new Set(
+    updated.map(r => r.sourceCourseCode.trim().toUpperCase()).filter(Boolean),
+  )
+  const existingNames = new Set(
+    updated.map(r => r.sourceCourseName.trim().toLowerCase()).filter(Boolean),
+  )
+
+  const newRows = usable
     .filter(c => {
+      if (isUnknownCourseName(c.course_name ?? '')) return false
+      const code = c.course_code?.trim().toUpperCase() ?? ''
       const name = c.course_name?.trim().toLowerCase() ?? ''
-      const code = c.course_code?.trim().toLowerCase() ?? ''
-      if (name && existingNames.has(name)) return false
       if (code && existingCodes.has(code)) return false
-      return true
+      if (name && existingNames.has(name)) return false
+      return Boolean(code || name)
     })
     .map(parsedToRow)
-  return [...existingRows, ...newRows]
+
+  return [...updated, ...newRows]
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +205,50 @@ export default function IntibakPage() {
     navigate('/login')
   }
 
+  async function syncParsedSourceFields(
+    activeTableId: string,
+    tableStatus: string,
+    nextRows: MappingRowState[],
+  ) {
+    if (tableStatus === 'SUBMITTED') return nextRows
+    const synced = [...nextRows]
+    for (let i = 0; i < synced.length; i++) {
+      const row = synced[i]
+      if (!row.mappingId || row.saved) continue
+      try {
+        await updateMapping(activeTableId, row.mappingId, {
+          source_course_code: row.sourceCourseCode || undefined,
+          source_course_name: row.sourceCourseName,
+          source_credits: row.sourceCredits,
+        })
+        synced[i] = { ...row, saved: true }
+      } catch {
+        // keep row editable if persist fails
+      }
+    }
+    return synced
+  }
+
+  async function loadParsedCourses(
+    activeTableId: string,
+    docId: string | null,
+    tableStatus: string,
+    intoRows: MappingRowState[],
+  ): Promise<MappingRowState[]> {
+    if (!docId || tableStatus === 'SUBMITTED') return intoRows
+    try {
+      const result = await parseTranscript(activeTableId)
+      setParsedCourses(result.courses)
+      if (result.courses.length === 0) return intoRows
+      let merged = applyParsedToRows(intoRows, result.courses)
+      merged = await syncParsedSourceFields(activeTableId, tableStatus, merged)
+      return merged
+    } catch (parseErr) {
+      console.warn('Transcript parse failed:', parseErr)
+      return intoRows
+    }
+  }
+
   async function loadData() {
     if (!applicationId) return
     try {
@@ -165,22 +258,18 @@ export default function IntibakPage() {
       setTranscriptDocId(t.transcript_document_id ?? null)
       let initialRows = t.mappings.map(mappingToRow)
 
-      if (
-        t.transcript_document_id &&
-        t.status !== 'SUBMITTED' &&
-        initialRows.length === 0
-      ) {
-        try {
-          const result = await parseTranscript(t.id)
-          setParsedCourses(result.courses)
-          initialRows = mergeParsedCourses(result.courses, [])
-          if (result.courses.length > 0) {
-            toast.success(
-              `Loaded ${result.courses.length} course${result.courses.length !== 1 ? 's' : ''} from transcript.`,
-            )
-          }
-        } catch (parseErr) {
-          console.warn('Transcript auto-parse failed:', parseErr)
+      if (t.transcript_document_id && t.status !== 'SUBMITTED') {
+        setParsing(true)
+        initialRows = await loadParsedCourses(
+          t.id,
+          t.transcript_document_id,
+          t.status,
+          initialRows,
+        )
+        if (initialRows.length > 0) {
+          toast.success(
+            `Loaded ${initialRows.length} course row${initialRows.length !== 1 ? 's' : ''} from transcript.`,
+          )
         }
       }
 
@@ -192,6 +281,7 @@ export default function IntibakPage() {
       setLoadError(true)
     } finally {
       setLoading(false)
+      setParsing(false)
     }
   }
 
@@ -207,7 +297,11 @@ export default function IntibakPage() {
     try {
       const result = await parseTranscript(tableId)
       setParsedCourses(result.courses)
-      setRows(prev => mergeParsedCourses(result.courses, prev))
+      let merged = applyParsedToRows(rows, result.courses)
+      if (table) {
+        merged = await syncParsedSourceFields(tableId, table.status, merged)
+      }
+      setRows(merged)
       toast.success(`Parsed ${result.courses.length} course${result.courses.length !== 1 ? 's' : ''} from transcript.`)
     } catch (err) {
       toast.error(extractErrorMessage(err))
@@ -273,6 +367,9 @@ export default function IntibakPage() {
     try {
       if (row.mappingId) {
         await updateMapping(tableId!, row.mappingId, {
+          source_course_code: row.sourceCourseCode || undefined,
+          source_course_name: row.sourceCourseName,
+          source_credits: row.sourceCredits,
           target_course_code: row.targetCourseCode || undefined,
           target_course_name: row.targetCourseName || undefined,
           target_credits: row.targetCredits ? Number(row.targetCredits) : undefined,
@@ -506,6 +603,7 @@ export default function IntibakPage() {
                     <tr className="text-left text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
                       <th className="px-3 py-3 font-medium min-w-[160px]">Source Course</th>
                       <th className="px-3 py-3 font-medium w-12 text-center">Cr.</th>
+                      <th className="px-3 py-3 font-medium w-14 text-center">Gr.</th>
                       <th className="px-3 py-3 font-medium min-w-[220px]">Target IYTE Course</th>
                       <th className="px-3 py-3 font-medium w-14 text-center">Cr.</th>
                       <th className="px-3 py-3 font-medium w-28">Equivalence</th>
@@ -522,7 +620,7 @@ export default function IntibakPage() {
                           {row.mappingId ? (
                             <>
                               <p className="font-medium text-gray-900 leading-tight">
-                                {row.sourceCourseName || '—'}
+                                {isUnknownCourseName(row.sourceCourseName) ? row.sourceCourseCode || '—' : row.sourceCourseName}
                               </p>
                               {row.sourceCourseCode && (
                                 <p className="font-mono text-xs text-gray-400 mt-0.5">
@@ -574,6 +672,11 @@ export default function IntibakPage() {
                               className="w-14 border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50"
                             />
                           )}
+                        </td>
+
+                        {/* Source grade from transcript */}
+                        <td className="px-3 py-3 text-center text-gray-600 text-xs">
+                          {row.sourceGrade || '—'}
                         </td>
 
                         {/* Target course */}

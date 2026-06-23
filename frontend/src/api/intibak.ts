@@ -186,6 +186,9 @@ export async function updateMapping(
   tableId: string,
   mappingId: string,
   payload: {
+    source_course_code?: string
+    source_course_name?: string
+    source_credits?: number
     target_course_code?: string
     target_course_name?: string
     target_credits?: number
@@ -194,6 +197,10 @@ export async function updateMapping(
   },
 ): Promise<CourseMapping> {
   const body: Record<string, unknown> = {}
+  if (payload.source_course_name !== undefined || payload.source_course_code !== undefined) {
+    body.source_course = joinCourseField(payload.source_course_code, payload.source_course_name)
+  }
+  if (payload.source_credits !== undefined) body.source_credits = payload.source_credits
   if (payload.target_course_name !== undefined || payload.target_course_code !== undefined) {
     body.target_course = joinCourseField(payload.target_course_code, payload.target_course_name)
   }

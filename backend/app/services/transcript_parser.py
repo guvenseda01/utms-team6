@@ -482,7 +482,7 @@ class TranscriptParser:
         name = _CODE_RE.sub("", name).strip()
         name = name.strip(" -:.,/\\")
         name = re.sub(r"\s+", " ", name)
-        return name or "Unknown Course"
+        return name or ""
 
 
 # ---------------------------------------------------------------------------
