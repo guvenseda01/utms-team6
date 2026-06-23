@@ -214,7 +214,7 @@ async def approve_final(
     app = await svc.approve_final(application_id, current_user.id, ip_address)
     return {
         "status": app.status.value,
-        "message": "Dean's approval recorded — application routed to Student Affairs",
+        "message": "Dean's approval recorded — application routed to Transfer Commission",
     }
 
 
