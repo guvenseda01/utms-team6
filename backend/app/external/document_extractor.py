@@ -137,18 +137,25 @@ def _extract_transcript(text: str) -> dict[str, Any]:
 def _extract_yks(text: str) -> dict[str, Any]:
     result: dict[str, Any] = {}
 
-    # Score type + score e.g. "SAY Puanı: 380.250"
     typed_m = _first([
-        r"(SAY|SÖZ|EA|YDİL)[:\s]+(?:Puan[ıi]?[:\s]+)?([\d.,]+)",
-        r"(SAY|SÖZ|EA|YDİL)\s+Puan[ıi]?\s*[:\-]?\s*([\d.,]+)",
+        r"(SAY|SÖZ|EA|YDT|YDİL|DİL)[:\s]+(?:Puan[ıi]?[:\s]+)?([\d.,]+)",
+        r"(SAY|SÖZ|EA|YDT|YDİL|DİL)\s+Puan[ıi]?\s*[:\-]?\s*([\d.,]+)",
     ], text)
     if typed_m:
-        result["score_type"] = typed_m.group(1).upper()
+        score_type = typed_m.group(1).upper().replace("DİL", "YDİL")
+        result["score_type"] = score_type
         result["score"] = round(_to_float(typed_m.group(2)), 3)
     else:
-        score_m = _first([r"(?:Puan[ıi]?|Score)[:\s]+([\d.,]+)"], text)
-        if score_m:
-            result["score"] = round(_to_float(score_m.group(1)), 3)
+        generic_m = _first([
+            r"(?:TYT|AYT)\s*(?:Puan[ıi]?)?[:\s]+([\d.,]+)",
+            r"(?:Yerleştirme|Yerlestirme)\s*Puan[ıi]?[:\s]+([\d.,]+)",
+            r"(?:YKS|ÖSYM|OSYM)\s*(?:Puan[ıi]?)?[:\s]+([\d.,]+)",
+            r"(?:Puan[ıi]?|Score|YKS\s*Score)[:\s]+([\d.,]+)",
+            r"(?:Toplam|Ham)\s*Puan[ıi]?[:\s]+([\d.,]+)",
+            r"\b([3-5]\d{2}(?:[.,]\d{1,3})?)\s*(?:puan|Puan)",
+        ], text)
+        if generic_m:
+            result["score"] = round(_to_float(generic_m.group(1)), 3)
 
     # Exam year
     year_m = _first([

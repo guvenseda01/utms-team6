@@ -331,10 +331,9 @@ class IntibakService:
                 detail="No accepted transcript document found for this application.",
             )
 
-        # 2. Return cached result only if it was produced by the transcript parser
-        #    (document_extractor stores gpa/credits/institution but never "courses")
+        # 2. Return cached transcript-parser result when courses are already stored
         cached = transcript_doc.extracted_data or {}
-        if transcript_doc.extraction_confirmed and "courses" in cached:
+        if cached.get("courses"):
             return {
                 "document_id": str(transcript_doc.id),
                 "parser_strategy": cached.get("parser_strategy", "cached"),

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
@@ -61,6 +61,7 @@ import type {
   AcademicRecord, Document, DocType,
 } from '../types/application'
 import { extractErrorMessage } from '../api/auth'
+import { academicRecordFromDocuments, mergeAcademicRecord } from '../lib/academicFromDocuments'
 
 const ROLE_LABELS: Record<string, string> = {
   APPLICANT: 'Applicant',
@@ -535,8 +536,12 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
     if (!application) return
     setFetchingAcademic(true)
     try {
-      const record = await fetchAcademicData(application.id)
-      setAcademicRecord(record)
+      const [record, docs] = await Promise.all([
+        fetchAcademicData(application.id),
+        listDocuments(application.id),
+      ])
+      setDocuments(docs)
+      setAcademicRecord(mergeAcademicRecord(record, academicRecordFromDocuments(docs), docs))
       if (record.errors?.length) {
         toast.error(`Partial data: ${record.errors.join(', ')}`)
       } else {
@@ -570,6 +575,15 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
       setDocuments(docs)
     }
   }
+
+  const parsedFromDocuments = useMemo(
+    () => academicRecordFromDocuments(documents),
+    [documents],
+  )
+  const displayAcademicRecord = useMemo(
+    () => mergeAcademicRecord(academicRecord, parsedFromDocuments, documents),
+    [academicRecord, parsedFromDocuments, documents],
+  )
 
   if (loadingApp) {
     return (
@@ -636,14 +650,14 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
                       <StatusBadge status={application.status} />
                     </div>
                     <div className="grid grid-cols-2 gap-6">
-                      {academicRecord?.institution && (
-                        <div><p className="text-gray-400 text-xs mb-1">Institution</p><p className="text-gray-900 text-sm">{academicRecord.institution}</p></div>
+                      {displayAcademicRecord?.institution && (
+                        <div><p className="text-gray-400 text-xs mb-1">Institution</p><p className="text-gray-900 text-sm">{displayAcademicRecord.institution}</p></div>
                       )}
-                      {academicRecord?.gpa_4 != null && (
-                        <div><p className="text-gray-400 text-xs mb-1">GPA (4.0)</p><p className="text-gray-900 text-sm">{academicRecord.gpa_4}</p></div>
+                      {displayAcademicRecord?.gpa_4 != null && (
+                        <div><p className="text-gray-400 text-xs mb-1">GPA (4.0)</p><p className="text-gray-900 text-sm">{displayAcademicRecord.gpa_4}</p></div>
                       )}
-                      {academicRecord?.yks_score != null && (
-                        <div><p className="text-gray-400 text-xs mb-1">YKS Score</p><p className="text-gray-900 text-sm">{academicRecord.yks_score}</p></div>
+                      {displayAcademicRecord?.yks_score != null && (
+                        <div><p className="text-gray-400 text-xs mb-1">YKS Score</p><p className="text-gray-900 text-sm">{displayAcademicRecord.yks_score}</p></div>
                       )}
                       <div><p className="text-gray-400 text-xs mb-1">Created</p><p className="text-gray-900 text-sm">{new Date(application.created_at).toLocaleDateString()}</p></div>
                       {application.submitted_at && (
@@ -782,7 +796,9 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <h2 className="text-lg font-semibold text-gray-900">Academic Data</h2>
-                        <p className="text-gray-500 text-xs mt-0.5">Fetched automatically from UBYS, YÖKSİS, and ÖSYM</p>
+                        <p className="text-gray-500 text-xs mt-0.5">
+                          From uploaded documents when available; otherwise UBYS, YÖKSİS, and ÖSYM
+                        </p>
                       </div>
                       <button
                         onClick={handleFetchAcademic}
@@ -793,16 +809,18 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
                         Fetch Academic Data
                       </button>
                     </div>
-                    {academicRecord ? (
+                    {displayAcademicRecord ? (
                       <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div><p className="text-gray-400 text-xs mb-0.5">Institution</p><p>{academicRecord.institution ?? '—'}</p></div>
-                        <div><p className="text-gray-400 text-xs mb-0.5">GPA (4.0)</p><p>{academicRecord.gpa_4 ?? '—'}</p></div>
-                        <div><p className="text-gray-400 text-xs mb-0.5">YKS Score</p><p>{academicRecord.yks_score ?? '—'}</p></div>
-                        <div><p className="text-gray-400 text-xs mb-0.5">Credits Completed</p><p>{academicRecord.credits_completed ?? '—'}</p></div>
-                        <div><p className="text-gray-400 text-xs mb-0.5">Source</p><p>{academicRecord.source ?? '—'}</p></div>
+                        <div><p className="text-gray-400 text-xs mb-0.5">Institution</p><p>{displayAcademicRecord.institution ?? '—'}</p></div>
+                        <div><p className="text-gray-400 text-xs mb-0.5">GPA (4.0)</p><p>{displayAcademicRecord.gpa_4 ?? '—'}</p></div>
+                        <div><p className="text-gray-400 text-xs mb-0.5">YKS Score</p><p>{displayAcademicRecord.yks_score ?? '—'}</p></div>
+                        <div><p className="text-gray-400 text-xs mb-0.5">Credits Completed</p><p>{displayAcademicRecord.credits_completed ?? '—'}</p></div>
+                        <div><p className="text-gray-400 text-xs mb-0.5">Source</p><p>{displayAcademicRecord.source ?? '—'}</p></div>
                       </div>
                     ) : (
-                      <p className="text-gray-400 text-sm">No academic data yet. Click "Fetch Academic Data".</p>
+                      <p className="text-gray-400 text-sm">
+                        Upload transcript and YKS documents to see parsed data, or click &quot;Fetch Academic Data&quot;.
+                      </p>
                     )}
                   </div>
 
