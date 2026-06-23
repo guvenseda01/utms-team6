@@ -102,6 +102,70 @@ _GRADE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Compact row: MATH101 Calculus I 4 BA  (also works when pypdf glues columns)
+_COURSE_ROW_RE = re.compile(
+    r"\b([A-ZÇĞİÖŞÜa-zçğışöü]{2,6}[\s\-]?\d{3,4}[A-Z]?)\s+"
+    r"(.+?)\s+"
+    r"(\d{1,2}(?:[.,]\d)?)\s+"
+    r"(AA|BA|BB|CB|CC|DC|DD|FD|FF|P|EX|W|I|S|U|NA)\b",
+    re.IGNORECASE,
+)
+
+
+def _prepare_text(text: str) -> str:
+    """Normalize PDF text: join broken lines and glued digits."""
+    text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
+    text = re.sub(r"(?<=[a-z,])\n(?=[a-z])", " ", text)
+    prev = None
+    while prev != text:
+        prev = text
+        text = re.sub(r"(\d) (\d)", r"\1\2", text)
+    return text
+
+
+def _is_valid_course_code(code: str) -> bool:
+    c = code.replace(" ", "").upper()
+    if not c or len(c) < 5:
+        return False
+    if re.match(r"^(FALL|SPRING|SUMMER|SEMESTER|WINTER|GPA|CREDIT|YEAR)\d*", c):
+        return False
+    if re.search(r"20\d{2}", c):
+        return False
+    return bool(re.match(r"^[A-ZÇĞİÖŞÜ]{2,6}\d{3}[A-Z]?$", c))
+
+
+def _normalize_courses(courses: list) -> list:
+    """Drop junk rows (semester headings, code-only, invalid codes)."""
+    cleaned: list = []
+    for c in courses:
+        code = (c.course_code or "").replace(" ", "").upper()
+        name = (c.course_name or "").strip()
+        if not _is_valid_course_code(code):
+            continue
+        if not name or name.lower() in {"semester", "unknown course", "course", "code"}:
+            continue
+        if name.upper().replace(" ", "") == code:
+            continue
+        cleaned.append(c)
+    return cleaned
+
+
+def _score_courses(courses: list) -> int:
+    courses = _normalize_courses(courses)
+    if not courses:
+        return 0
+    total = 0
+    for c in courses:
+        name = (c.course_name or "").strip()
+        if name:
+            total += 3
+        if c.credits:
+            total += 2
+        if c.grade:
+            total += 1
+    return total
+
+
 # Semester / term heading pattern
 _SEMESTER_RE = re.compile(
     r"((?:19|20)\d{2}[-/](?:19|20)?\d{2,4}[\s\-]*(?:güz|bahar|yaz|fall|spring|summer|guz)?)"
@@ -134,32 +198,23 @@ class TranscriptParser:
                 return result
 
         result.raw_text = text
+        prepared = _prepare_text(text)
 
-        # Strategy 1: table-based extraction
+        candidates: list[tuple[str, list]] = []
         if tables:
-            courses = self._parse_tables(tables)
-            if courses:
-                result.courses = courses
-                result.parser_strategy = "table"
-                self._attach_semesters(text, result.courses)
-                return result
+            candidates.append(("table", self._parse_tables(tables)))
+        candidates.append(("row_pattern", self._parse_row_pattern(prepared)))
+        candidates.append(("line_regex", self._parse_lines(prepared)))
+        candidates.append(("heuristic", self._parse_heuristic(prepared)))
 
-        # Strategy 2: line-based regex
-        courses = self._parse_lines(text)
-        if courses:
-            result.courses = courses
-            result.parser_strategy = "line_regex"
-            self._attach_semesters(text, result.courses)
-            return result
-
-        # Strategy 3: heuristic fallback
-        courses = self._parse_heuristic(text)
-        result.courses = courses
-        result.parser_strategy = "heuristic"
-        result.warnings.append(
-            "Could not detect a standard transcript format; credits/grades may be missing."
-        )
-        self._attach_semesters(text, result.courses)
+        best_strategy, best_courses = max(candidates, key=lambda item: _score_courses(item[1]))
+        result.courses = _normalize_courses(best_courses)
+        result.parser_strategy = best_strategy
+        if _score_courses(best_courses) == 0:
+            result.warnings.append(
+                "Could not detect a standard transcript format; credits/grades may be missing."
+            )
+        self._attach_semesters(prepared, result.courses)
         return result
 
     # ------------------------------------------------------------------
@@ -222,12 +277,29 @@ class TranscriptParser:
                 credit = self._extract_credit_from_cells(cells, col)
                 grade  = self._extract_grade_from_cells(cells, col)
 
+                cleaned_name = self._clean_course_name(name)
+                if not cleaned_name and code:
+                    name_parts = []
+                    for i, cell in enumerate(cells):
+                        if i in (col["code"], col["credits"], col["grade"]):
+                            continue
+                        if cell and not _GRADE_RE.match(cell.strip().upper()):
+                            if not _CREDIT_RE.match(cell.strip()):
+                                name_parts.append(cell)
+                    cleaned_name = self._clean_course_name(" ".join(name_parts))
+
+                # Skip code-only rows — other strategies will parse the full row
+                if not cleaned_name:
+                    continue
+                if code and cleaned_name.upper().replace(" ", "") == code.replace(" ", ""):
+                    continue
+
                 courses.append(ParsedCourse(
                     course_code=code,
-                    course_name=self._clean_course_name(name),
+                    course_name=cleaned_name,
                     credits=credit,
                     grade=grade,
-                    semester=None,  # filled in by _attach_semesters
+                    semester=None,
                 ))
         return courses
 
@@ -312,6 +384,32 @@ class TranscriptParser:
             courses.append(ParsedCourse(
                 course_code=code,
                 course_name=self._clean_course_name(course_name),
+                credits=credit,
+                grade=grade,
+                semester=None,
+            ))
+        return courses
+
+    # ------------------------------------------------------------------
+    # Strategy 2b — Row pattern (CODE Name Credit Grade)
+    # ------------------------------------------------------------------
+
+    def _parse_row_pattern(self, text: str) -> list:
+        courses = []
+        seen: set[str] = set()
+        for m in _COURSE_ROW_RE.finditer(text):
+            code = m.group(1).replace(" ", "").upper()
+            if code in seen:
+                continue
+            seen.add(code)
+            name = self._clean_course_name(m.group(2))
+            if not name:
+                continue
+            credit = self._parse_credit(m.group(3))
+            grade = self._normalize_grade(m.group(4))
+            courses.append(ParsedCourse(
+                course_code=code,
+                course_name=name,
                 credits=credit,
                 grade=grade,
                 semester=None,

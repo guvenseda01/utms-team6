@@ -123,14 +123,10 @@ function applyParsedToRows(
 
     const patch: Partial<MappingRowState> = {}
     if (parsed.course_name && !isUnknownCourseName(parsed.course_name)) {
-      if (isUnknownCourseName(row.sourceCourseName)) {
-        patch.sourceCourseName = parsed.course_name
-      }
+      patch.sourceCourseName = parsed.course_name
     }
     if (parsed.credits != null && parsed.credits > 0) {
-      if (!row.sourceCredits || row.sourceCredits === 0) {
-        patch.sourceCredits = parsed.credits
-      }
+      patch.sourceCredits = parsed.credits
     }
     if (parsed.grade) patch.sourceGrade = parsed.grade
     if (parsed.semester) patch.sourceSemester = parsed.semester
@@ -554,8 +550,8 @@ export default function IntibakPage() {
                         <td className="px-4 py-3 font-mono text-xs text-gray-600">
                           {c.course_code || '—'}
                         </td>
-                        <td className="px-4 py-3 text-gray-900">{c.course_name}</td>
-                        <td className="px-4 py-3 text-gray-600">{c.credits}</td>
+                        <td className="px-4 py-3 text-gray-900">{c.course_name || '—'}</td>
+                        <td className="px-4 py-3 text-gray-600">{c.credits ?? '—'}</td>
                         <td className="px-4 py-3 text-gray-600">{c.grade || '—'}</td>
                         <td className="px-4 py-3 text-gray-600">{c.semester || '—'}</td>
                       </tr>

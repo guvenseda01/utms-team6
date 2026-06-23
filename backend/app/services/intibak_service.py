@@ -23,12 +23,18 @@ from app.repositories.application_repository import ApplicationRepository
 
 
 def _parsed_courses_usable(courses: list) -> bool:
-    """Cached transcript courses must have real names — not placeholder rows."""
+    """Cached transcript courses must have real names and credits."""
     if not courses:
         return False
     for item in courses:
         name = str(item.get("course_name") or "").strip()
+        code = str(item.get("course_code") or "").strip().upper().replace(" ", "")
+        credits = item.get("credits")
         if not name or name.lower() == "unknown course":
+            return False
+        if code and name.upper().replace(" ", "") == code:
+            return False
+        if credits is None or float(credits or 0) <= 0:
             return False
     return True
 
@@ -342,7 +348,7 @@ class IntibakService:
                 detail="No accepted transcript document found for this application.",
             )
 
-        # 2. Use cached courses only when complete (skip stale "Unknown Course" entries)
+        # 2. Skip incomplete cached rows (code-only / Unknown Course from old parses)
         cached = transcript_doc.extracted_data or {}
         cached_courses = cached.get("courses") or []
         if cached_courses and _parsed_courses_usable(cached_courses):
@@ -353,7 +359,7 @@ class IntibakService:
                 "courses": cached_courses,
             }
 
-        # 3. Download PDF binary from MinIO
+        # Always re-parse when cache is missing or incomplete
         _storage = storage or MinIOClient()
         try:
             response = _storage.get_object(transcript_doc.file_path)
