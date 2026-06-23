@@ -61,7 +61,7 @@ import type {
   AcademicRecord, Document, DocType,
 } from '../types/application'
 import { extractErrorMessage } from '../api/auth'
-import { academicRecordFromDocuments, mergeAcademicRecord } from '../lib/academicFromDocuments'
+import { academicRecordFromDocuments, latestDocument, mergeAcademicRecord } from '../lib/academicFromDocuments'
 
 const ROLE_LABELS: Record<string, string> = {
   APPLICANT: 'Applicant',
@@ -364,7 +364,7 @@ function DocumentUploadRow({
   applicationId: string
   docType: DocType
   existing: Document | undefined
-  onUploaded: () => void
+  onUploaded: (uploaded?: Document) => void
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -384,9 +384,9 @@ function DocumentUploadRow({
 
     setUploading(true)
     try {
-      await uploadDocument(applicationId, docType, file)
+      const uploaded = await uploadDocument(applicationId, docType, file)
       toast.success(`${DOC_TYPE_LABELS[docType]} uploaded.`)
-      onUploaded()
+      onUploaded(uploaded)
     } catch (err) {
       toast.error(extractErrorMessage(err))
     } finally {
@@ -448,8 +448,15 @@ function DocumentUploadRow({
             documentId={existing.id}
             data={existing.extracted_data as Record<string, unknown>}
             confirmed={existing.extraction_confirmed}
-            onConfirmed={onUploaded}
+            onConfirmed={() => onUploaded()}
           />
+        </div>
+      )}
+      {existing && !hasExtraction && (
+        <div className="ml-5 mt-2 rounded-lg border border-orange-200 bg-orange-50 p-3">
+          <p className="text-xs text-orange-700">
+            No data extracted from this PDF yet. Refresh the page or use Replace to re-upload.
+          </p>
         </div>
       )}
     </div>
@@ -571,11 +578,16 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
     }
   }
 
-  async function handleDocUploaded() {
-    if (application) {
-      const docs = await listDocuments(application.id)
-      setDocuments(docs)
+  async function handleDocUploaded(uploaded?: Document) {
+    if (!application) return
+    if (uploaded) {
+      setDocuments(prev => {
+        const rest = prev.filter(d => d.doc_type !== uploaded.doc_type)
+        return [...rest, uploaded]
+      })
     }
+    const docs = await listDocuments(application.id)
+    setDocuments(docs)
   }
 
   const parsedFromDocuments = useMemo(
@@ -836,7 +848,7 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
                           key={dt}
                           applicationId={application.id}
                           docType={dt}
-                          existing={documents.find(d => d.doc_type === dt)}
+                          existing={latestDocument(documents, dt)}
                           onUploaded={handleDocUploaded}
                         />
                       ))}

@@ -14,15 +14,36 @@ from app.domain.enums import DocType
 logger = logging.getLogger(__name__)
 
 
+def _extract_text_pypdf(file_bytes: bytes) -> str:
+    from pypdf import PdfReader
+    reader = PdfReader(io.BytesIO(file_bytes))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def _extract_text_pdfplumber(file_bytes: bytes) -> str:
+    import pdfplumber
+    parts: list[str] = []
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            parts.append(page.extract_text() or "")
+    return "\n".join(parts)
+
+
 def _extract_text(file_bytes: bytes) -> str:
+    raw = ""
     try:
-        from pypdf import PdfReader
-        reader = PdfReader(io.BytesIO(file_bytes))
-        raw = "\n".join(page.extract_text() or "" for page in reader.pages)
-        return _normalize(raw)
+        raw = _extract_text_pypdf(file_bytes)
     except Exception as exc:
-        logger.warning("PDF text extraction failed: %s", exc)
-        return ""
+        logger.warning("pypdf text extraction failed: %s", exc)
+    if raw.strip():
+        return _normalize(raw)
+    try:
+        raw = _extract_text_pdfplumber(file_bytes)
+        if raw.strip():
+            return _normalize(raw)
+    except Exception as exc:
+        logger.warning("pdfplumber text extraction failed: %s", exc)
+    return ""
 
 
 def _normalize(text: str) -> str:

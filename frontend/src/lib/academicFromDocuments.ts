@@ -6,13 +6,20 @@ function num(value: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function latestUploadedDoc(
+export function latestDocument(
   documents: Document[],
   docType: Document['doc_type'],
 ): Document | undefined {
   return documents
     .filter(d => d.doc_type === docType)
     .sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime())[0]
+}
+
+function latestUploadedDoc(
+  documents: Document[],
+  docType: Document['doc_type'],
+): Document | undefined {
+  return latestDocument(documents, docType)
 }
 
 function latestParsedDoc(
@@ -33,7 +40,7 @@ export function hasYksDocument(documents: Document[]): boolean {
 
 /** YKS score strictly from YKS_RESULT document extraction. */
 export function yksScoreFromDocuments(documents: Document[]): number | null {
-  const yks = latestUploadedDoc(documents, 'YKS_RESULT')
+  const yks = latestParsedDoc(documents, 'YKS_RESULT') ?? latestUploadedDoc(documents, 'YKS_RESULT')
   if (!yks?.extracted_data || typeof yks.extracted_data !== 'object') return null
   const data = yks.extracted_data as Record<string, unknown>
   if (Object.keys(data).every(k => k === '_missing')) return null
