@@ -24,7 +24,8 @@ from app.services.officer_service import OfficerApplicationService
 
 router = APIRouter()
 
-_require_sa = require_role(UserRole.STUDENT_AFFAIRS)
+# SYSTEM_ADMIN included so admin/test accounts can exercise Student Affairs flows
+_require_sa = require_role(UserRole.STUDENT_AFFAIRS, UserRole.SYSTEM_ADMIN)
 
 
 class CorrectionRequest(BaseModel):

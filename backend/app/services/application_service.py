@@ -25,14 +25,22 @@ logger = logging.getLogger(__name__)
 # Legal status transitions: maps current status → allowed next statuses
 _TRANSITIONS: dict[AppStatus, set[AppStatus]] = {
     AppStatus.DRAFT: {AppStatus.SUBMITTED},
-    AppStatus.SUBMITTED: {AppStatus.UNDER_REVIEW, AppStatus.REJECTED},
+    # SA can move to UNDER_REVIEW (open for review), request a correction, or reject outright
+    AppStatus.SUBMITTED: {
+        AppStatus.UNDER_REVIEW,
+        AppStatus.CORRECTION_REQUESTED,
+        AppStatus.REJECTED,
+    },
+    # From UNDER_REVIEW SA routes to YDYO, requests correction, or rejects
+    # RANKING direct jump removed — UNDER_REVIEW must go through ENGLISH_REVIEW first
     AppStatus.UNDER_REVIEW: {
         AppStatus.ENGLISH_REVIEW,
-        AppStatus.RANKING,
         AppStatus.CORRECTION_REQUESTED,
         AppStatus.REJECTED,
     },
     AppStatus.CORRECTION_REQUESTED: {AppStatus.UNDER_REVIEW},
+    # YDYO: approve → DEAN_APPROVED; outright reject (fraudulent cert) → REJECTED
+    # Insufficient score path uses route-to-exam (stays ENGLISH_REVIEW) not this transition
     AppStatus.ENGLISH_REVIEW: {AppStatus.DEAN_APPROVED, AppStatus.REJECTED},
     AppStatus.DEPT_EVAL: {AppStatus.RANKING, AppStatus.REJECTED},
     AppStatus.DEAN_APPROVED: {AppStatus.RANKING, AppStatus.ANNOUNCED, AppStatus.REJECTED},
