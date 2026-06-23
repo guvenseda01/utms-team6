@@ -77,16 +77,19 @@ class OfficerApplicationService:
         app = await self._app_repo.get_by_id(application_id)
         if app is None:
             raise HTTPException(status_code=404, detail="Application not found")
-        if app.status != AppStatus.SUBMITTED:
+        if app.status not in (AppStatus.SUBMITTED, AppStatus.UNDER_REVIEW):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Expected SUBMITTED, got {app.status.value}",
+                detail=f"Expected SUBMITTED or UNDER_REVIEW, got {app.status.value}",
             )
 
         old_status = app.status.value
-        await self._app_svc.change_status(
-            application_id, AppStatus.UNDER_REVIEW, officer_id, "Documents verified"
-        )
+        # If still SUBMITTED, pass through UNDER_REVIEW on the way to ENGLISH_REVIEW.
+        # If already UNDER_REVIEW (student resubmitted corrections), skip that step.
+        if app.status == AppStatus.SUBMITTED:
+            await self._app_svc.change_status(
+                application_id, AppStatus.UNDER_REVIEW, officer_id, "Documents verified"
+            )
         await self._app_svc.change_status(
             application_id, AppStatus.ENGLISH_REVIEW, officer_id, "Routed to YDYO for English proficiency review"
         )

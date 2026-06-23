@@ -1242,7 +1242,7 @@ const REJECTION_CODES: RejectionReasonCode[] = [
 function ApplicationsReviewPanel() {
   const [apps, setApps] = useState<StaffApplicationSummary[]>([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('SUBMITTED')
+  const [statusFilter, setStatusFilter] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<StaffApplicationDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -1345,7 +1345,7 @@ function ApplicationsReviewPanel() {
     }
   }
 
-  const canAct = detail?.status === 'SUBMITTED'
+  const canAct = detail?.status === 'SUBMITTED' || detail?.status === 'UNDER_REVIEW'
 
   return (
     <div className="space-y-6">
@@ -1359,11 +1359,11 @@ function ApplicationsReviewPanel() {
           onChange={e => { setStatusFilter(e.target.value); setSelectedId(null); setDetail(null) }}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
         >
+          <option value="">All</option>
           <option value="SUBMITTED">Submitted</option>
           <option value="UNDER_REVIEW">Under Review</option>
           <option value="CORRECTION_REQUESTED">Correction Requested</option>
           <option value="REJECTED">Rejected</option>
-          <option value="">All</option>
         </select>
       </div>
 
