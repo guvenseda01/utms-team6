@@ -58,13 +58,22 @@ class ChangePasswordRequest(BaseModel):
 
 
 class RegistrationRequest(BaseModel):
-    national_id: str = Field(min_length=5, max_length=11)
+    national_id: str = Field(min_length=11, max_length=11)
     date_of_birth: date
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
     university_email: EmailStr
     password: str
     password_confirm: str
+
+    @field_validator("national_id")
+    @classmethod
+    def validate_national_id(cls, v: str) -> str:
+        if not v or len(v) != 11:
+            raise ValueError("TC Kimlik No must be exactly 11 digits.")
+        if not v.isdigit():
+            raise ValueError("TC Kimlik No must contain only digits.")
+        return v
 
     @field_validator("password")
     @classmethod

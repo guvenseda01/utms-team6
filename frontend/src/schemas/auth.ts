@@ -11,8 +11,8 @@ export const registerSchema = z
     .object({
         national_id: z
             .string()
-            .min(5, 'National ID must be at least 5 characters')
-            .max(11, 'National ID must be at most 11 characters'),
+            .length(11, 'National ID must be exactly 11 digits')
+            .regex(/^\d{11}$/, 'National ID must contain only digits'),
         date_of_birth: z
             .string()
             .min(1, 'Date of birth is required')

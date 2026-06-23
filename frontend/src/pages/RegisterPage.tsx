@@ -13,10 +13,12 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [nationalId, setNationalId] = useState('')
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<RegisterFormData>({ resolver: zodResolver(registerSchema) })
 
@@ -119,10 +121,21 @@ export default function RegisterPage() {
                   type="text"
                   inputMode="numeric"
                   maxLength={11}
+                  pattern="[0-9]*"
                   placeholder="12345678901"
                   {...register('national_id')}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 11)
+                    setNationalId(value)
+                    setValue('national_id', value)
+                  }}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
+                {nationalId.length > 0 && nationalId.length !== 11 && (
+                  <p className="mt-1 text-xs text-red-600">
+                    TC Kimlik No 11 haneli olmalıdır. ({nationalId.length}/11)
+                  </p>
+                )}
                 {errors.national_id && <p className="mt-1 text-xs text-red-600">{errors.national_id.message}</p>}
               </div>
               <div>
