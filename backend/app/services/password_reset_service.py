@@ -71,6 +71,9 @@ class PasswordResetService:
 
         # Update password
         user.password_hash = hash_password(new_password)
+        # Reset link proves mailbox access — treat as email verification too.
+        if not user.is_verified:
+            user.is_verified = True
         await self.db.flush()
 
         # Delete used token and invalidate all active sessions

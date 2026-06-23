@@ -57,6 +57,11 @@ export async function forgotPassword(email: string): Promise<{ message: string }
   return data
 }
 
+export async function resendVerification(email: string): Promise<{ message: string }> {
+  const { data } = await client.post('/auth/resend-verification', { email })
+  return data
+}
+
 export async function resetPassword(
   token: string,
   new_password: string,

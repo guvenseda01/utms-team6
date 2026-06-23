@@ -123,3 +123,24 @@ class RegistrationService:
         )
         self.db.add(log)
         await self.db.flush()
+
+    async def resend_verification(self, email: str) -> None:
+        """Re-send verification email. Silent when account missing or already verified."""
+        user = await self._user_repo.get_by_email(email)
+        if user is None or user.is_verified:
+            return
+
+        token = str(uuid.uuid4())
+        await store_email_verify_token(token, str(user.id))
+
+        verify_link = f"{settings.FRONTEND_URL}/verify-email/{token}"
+        notif_svc = NotificationService(self.db)
+        await notif_svc.enqueue(
+            user_id=user.id,
+            subject="UTMS — E-posta Adresinizi Doğrulayın",
+            template="email_verification",
+            template_vars={
+                "verify_link": verify_link,
+                "title": "E-posta Doğrulama",
+            },
+        )
