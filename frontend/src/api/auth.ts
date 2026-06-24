@@ -20,13 +20,25 @@ client.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config as (typeof error.config) & { _retry?: boolean }
+    const status = error.response?.status
+
+    // 403 means our cookie has the wrong role (e.g. another tab logged in as a
+    // different user and replaced the cookie). Clear local state and go to login.
+    if (status === 403) {
+      window.dispatchEvent(new CustomEvent('auth:session-conflict'))
+      return Promise.reject(error)
+    }
 
     if (
-      error.response?.status !== 401 ||
+      status !== 401 ||
       original._retry ||
       original.url === '/auth/refresh' ||
       original.url === '/auth/logout'
     ) {
+      // Refresh itself failed → session is truly over.
+      if (original.url === '/auth/refresh') {
+        window.dispatchEvent(new CustomEvent('auth:session-expired'))
+      }
       return Promise.reject(error)
     }
 

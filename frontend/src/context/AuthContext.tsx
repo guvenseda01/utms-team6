@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 
 interface AuthState {
   role: string | null
@@ -53,6 +53,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserNameState(null)
     setMustChangePasswordState(false)
   }
+
+  // Reset in-memory state only (don't touch localStorage — the other tab owns it now).
+  function _resetState() {
+    setRoleState(null)
+    setUserNameState(null)
+    setMustChangePasswordState(false)
+  }
+
+  useEffect(() => {
+    // Another tab logged in/out → their login replaced our cookie, so our
+    // requests will fail with wrong-role errors. Drop to login screen.
+    function onStorage(e: StorageEvent) {
+      if (e.key === 'role') _resetState()
+    }
+
+    // Axios interceptor signals a 403 (wrong role in cookie) or a failed refresh.
+    function onSessionEnd() { _resetState() }
+
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('auth:session-conflict', onSessionEnd)
+    window.addEventListener('auth:session-expired', onSessionEnd)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('auth:session-conflict', onSessionEnd)
+      window.removeEventListener('auth:session-expired', onSessionEnd)
+    }
+  }, [])
 
   return (
     <AuthContext.Provider value={{ role, userName, mustChangePassword, setAuth, setRole, clearMustChangePassword, clearAuth }}>
