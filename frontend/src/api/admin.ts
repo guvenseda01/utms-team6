@@ -54,6 +54,11 @@ export async function activateStaff(staffId: string): Promise<StaffMember> {
   return data
 }
 
+export async function resetStaffPassword(staffId: string): Promise<StaffCreateResponse> {
+  const { data } = await client.post<StaffCreateResponse>(`/staff/${staffId}/reset-password`)
+  return data
+}
+
 // SPEC-018: Application period management
 export async function listPeriods(): Promise<ApplicationPeriod[]> {
   const { data } = await client.get<ApplicationPeriod[]>('/periods')

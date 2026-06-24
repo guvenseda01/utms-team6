@@ -5,11 +5,11 @@ import {
   Home, FileText, Send, CheckCircle, Clock, Users,
   Settings, BarChart2, Upload, Eye, RefreshCw, PlusCircle,
   UserPlus, Trash2, Edit2, X, UserCheck, CalendarDays, ShieldCheck,
-  Megaphone, AlertTriangle, Trophy, ClipboardList,
+  Megaphone, AlertTriangle, Trophy, ClipboardList, KeyRound,
 } from 'lucide-react'
 import { logout } from '../api/auth'
 import {
-  listStaff, createStaff, updateStaffRole, deactivateStaff, activateStaff,
+  listStaff, createStaff, updateStaffRole, deactivateStaff, activateStaff, resetStaffPassword,
   listPeriods, createPeriod, updatePeriod, extendPeriod, emergencyClosePeriod, activatePeriod, deactivatePeriod,
   listConditions, addCondition, updateCondition, deleteCondition,
 } from '../api/admin'
@@ -601,6 +601,12 @@ function ApplicantDashboardContent({ userName, onLogout }: { userName: string; o
     }
     const docs = await listDocuments(application.id)
     setDocuments(docs)
+    if (uploaded && ['TRANSCRIPT', 'YKS_RESULT'].includes(uploaded.doc_type)) {
+      try {
+        const record = await fetchAcademicData(application.id)
+        setAcademicRecord(mergeAcademicRecord(record, academicRecordFromDocuments(docs), docs))
+      } catch { /* silent — user can still manually refresh */ }
+    }
   }
 
   async function handleResubmit() {
@@ -2874,6 +2880,7 @@ function AdminDashboardContent({ userName, onLogout }: { userName: string; onLog
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null)
   const [deactivating, setDeactivating] = useState<string | null>(null)
   const [activating, setActivating] = useState<string | null>(null)
+  const [resettingPw, setResettingPw] = useState<string | null>(null)
 
   async function loadStaff() {
     try {
@@ -2899,6 +2906,19 @@ function AdminDashboardContent({ userName, onLogout }: { userName: string; onLog
       toast.error(extractAdminError(err, 'Failed to reactivate staff'))
     } finally {
       setActivating(null)
+    }
+  }
+
+  async function handleResetPassword(member: StaffMember) {
+    if (!confirm(`Reset password for ${member.first_name} ${member.last_name}? A new temporary password will be generated and their sessions will be revoked.`)) return
+    setResettingPw(member.id)
+    try {
+      const result = await resetStaffPassword(member.id)
+      toast.success(`Password reset. New temp password: ${result.temp_password}`, { duration: 15000 })
+    } catch (err: unknown) {
+      toast.error(extractAdminError(err, 'Failed to reset password'))
+    } finally {
+      setResettingPw(null)
     }
   }
 
@@ -3010,6 +3030,14 @@ function AdminDashboardContent({ userName, onLogout }: { userName: string; onLog
                             className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded"
                           >
                             <Edit2 className="w-3 h-3" /> Role
+                          </button>
+                          <button
+                            onClick={() => handleResetPassword(member)}
+                            disabled={resettingPw === member.id}
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-amber-600 hover:bg-amber-50 rounded disabled:opacity-50"
+                          >
+                            {resettingPw === member.id ? <Spinner /> : <KeyRound className="w-3 h-3" />}
+                            Reset PW
                           </button>
                           <button
                             onClick={() => handleDeactivate(member)}

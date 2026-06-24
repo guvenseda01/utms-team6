@@ -1263,8 +1263,21 @@ function RankingPage() {
       localStorage.setItem(RANKING_STORAGE_KEY, result.id)
       setWaitlist(null)
       toast.success('Ranking generated successfully.')
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
+    } catch (err: any) {
+      const existingId = err?.response?.data?.existing_id
+      if (err?.response?.status === 409 && existingId) {
+        try {
+          const full = await getRanking(existingId)
+          setRanking(full)
+          localStorage.setItem(RANKING_STORAGE_KEY, existingId)
+          setWaitlist(null)
+          toast.success('Existing ranking loaded.')
+        } catch {
+          toast.error('Ranking already exists but could not be loaded.')
+        }
+      } else {
+        toast.error(extractErrorMessage(err))
+      }
     } finally {
       setGenerating(false)
     }

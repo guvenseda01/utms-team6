@@ -164,6 +164,35 @@ class AdminService:
 
         return staff, temp_password
 
+    async def reset_staff_password(
+        self, staff_id: uuid.UUID, reset_by: uuid.UUID
+    ) -> tuple[Staff, str]:
+        staff = await self._user_repo.get_staff_by_id(staff_id)
+        if staff is None or not staff.user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Staff member not found",
+            )
+
+        temp_password = _generate_temp_password()
+        staff.user.password_hash = hash_password(temp_password)
+        staff.user.must_change_password = True
+        await self.db.flush()
+
+        await revoke_all_user_jtis(str(staff_id))
+
+        log = AuditLog(
+            actor_id=reset_by,
+            action="PASSWORD_RESET",
+            entity_type="User",
+            entity_id=staff_id,
+            new_value={"reset_by": str(reset_by)},
+        )
+        self.db.add(log)
+        await self.db.flush()
+
+        return staff, temp_password
+
     async def update_role(
         self, staff_id: uuid.UUID, new_role: UserRole, updated_by: uuid.UUID
     ) -> Staff:

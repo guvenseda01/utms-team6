@@ -122,6 +122,18 @@ async def reactivate_staff(
     return _staff_to_response(staff)
 
 
+@router.post("/staff/{staff_id}/reset-password")
+async def reset_staff_password(
+    staff_id: uuid.UUID,
+    current_user: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    svc = AdminService(db)
+    staff, temp_password = await svc.reset_staff_password(staff_id, current_user.id)
+    response = _staff_to_response(staff)
+    return StaffCreateResponse(**response.model_dump(), temp_password=temp_password)
+
+
 @router.delete("/staff/{staff_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deactivate_staff(
     staff_id: uuid.UUID,

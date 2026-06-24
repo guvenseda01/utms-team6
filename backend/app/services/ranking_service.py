@@ -49,10 +49,14 @@ class RankingService:
                 Ranking.period_id == period_id,
             )
         )
-        if existing_result.scalar_one_or_none() is not None:
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Ranking already exists for this program/period",
+                detail={
+                    "message": "Ranking already exists for this program/period",
+                    "existing_id": str(existing.id),
+                },
             )
 
         apps_result = await self.db.execute(
