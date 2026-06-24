@@ -17,38 +17,38 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRoleState] = useState<string | null>(
-    () => sessionStorage.getItem('role'),
+    () => localStorage.getItem('role'),
   )
   const [userName, setUserNameState] = useState<string | null>(
-    () => sessionStorage.getItem('userName'),
+    () => localStorage.getItem('userName'),
   )
   const [mustChangePassword, setMustChangePasswordState] = useState<boolean>(
-    () => sessionStorage.getItem('mustChangePassword') === 'true',
+    () => localStorage.getItem('mustChangePassword') === 'true',
   )
 
   function setAuth(r: string, name: string, mcp = false) {
-    sessionStorage.setItem('role', r)
-    sessionStorage.setItem('userName', name)
-    sessionStorage.setItem('mustChangePassword', String(mcp))
+    localStorage.setItem('role', r)
+    localStorage.setItem('userName', name)
+    localStorage.setItem('mustChangePassword', String(mcp))
     setRoleState(r)
     setUserNameState(name)
     setMustChangePasswordState(mcp)
   }
 
   function setRole(r: string) {
-    sessionStorage.setItem('role', r)
+    localStorage.setItem('role', r)
     setRoleState(r)
   }
 
   function clearMustChangePassword() {
-    sessionStorage.setItem('mustChangePassword', 'false')
+    localStorage.setItem('mustChangePassword', 'false')
     setMustChangePasswordState(false)
   }
 
   function clearAuth() {
-    sessionStorage.removeItem('role')
-    sessionStorage.removeItem('userName')
-    sessionStorage.removeItem('mustChangePassword')
+    localStorage.removeItem('role')
+    localStorage.removeItem('userName')
+    localStorage.removeItem('mustChangePassword')
     setRoleState(null)
     setUserNameState(null)
     setMustChangePasswordState(false)

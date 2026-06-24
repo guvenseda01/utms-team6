@@ -9,6 +9,50 @@ const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// Auto-refresh: when a request fails with 401, silently refresh the access
+// token and retry once. If the refresh itself fails, reject so the caller
+// (or a top-level 401 handler) can redirect to login.
+let _refreshing = false
+type QueueEntry = { resolve: (v: unknown) => void; reject: (e: unknown) => void }
+let _queue: QueueEntry[] = []
+
+client.interceptors.response.use(
+  (res) => res,
+  async (error) => {
+    const original = error.config as (typeof error.config) & { _retry?: boolean }
+
+    if (
+      error.response?.status !== 401 ||
+      original._retry ||
+      original.url === '/auth/refresh' ||
+      original.url === '/auth/logout'
+    ) {
+      return Promise.reject(error)
+    }
+
+    if (_refreshing) {
+      return new Promise((resolve, reject) => {
+        _queue.push({ resolve, reject })
+      }).then(() => client(original))
+    }
+
+    original._retry = true
+    _refreshing = true
+
+    try {
+      await client.post('/auth/refresh')
+      _queue.forEach((p) => p.resolve(undefined))
+      return client(original)
+    } catch (e) {
+      _queue.forEach((p) => p.reject(e))
+      return Promise.reject(e)
+    } finally {
+      _queue = []
+      _refreshing = false
+    }
+  },
+)
+
 export function extractErrorMessage(err: unknown): string {
   if (err instanceof AxiosError && err.response?.data) {
     const data = err.response.data as ApiError
