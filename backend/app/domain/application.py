@@ -28,9 +28,9 @@ _STATUS_ORDER = [
     AppStatus.SUBMITTED,
     AppStatus.UNDER_REVIEW,
     AppStatus.ENGLISH_REVIEW,
+    AppStatus.DEAN_APPROVED,
     AppStatus.DEPT_EVAL,
     AppStatus.RANKING,
-    AppStatus.DEAN_APPROVED,
     AppStatus.ANNOUNCED,
 ]
 
